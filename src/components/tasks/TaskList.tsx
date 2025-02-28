@@ -1,0 +1,93 @@
+// Import necessary modules and components from React and local files
+import React, { useState, useEffect } from 'react';
+import { useTaskStore } from '../../lib/store/task';
+import { useAuthStore } from '../../lib/store/auth';
+import { TaskListHeader } from './TaskListHeader';
+import { TaskListFilters } from './TaskListFilters';
+import { TaskItem } from './TaskItem';
+
+// Define the TaskList component
+export const TaskList = () => {
+  // Destructure user from the authentication store
+  const { user } = useAuthStore();
+  // Destructure tasks, loading state, and fetchAssignedTasks function from the task store
+  const { tasks, loading, fetchAssignedTasks } = useTaskStore();
+  // State to track the current filter
+  const [filter, setFilter] = useState<'upcoming' | 'overdue' | 'completed'>('upcoming');
+
+  // useEffect hook to fetch assigned tasks when the user ID changes
+  useEffect(() => {
+    if (user?.id) {
+      fetchAssignedTasks(user.id);
+    }
+  }, [user?.id, fetchAssignedTasks]);
+
+  // Filter tasks based on the current filter
+  const filteredTasks = tasks.filter(task => {
+    const dueDate = task.due_date ? new Date(task.due_date) : null;
+    const today = new Date();
+    
+    switch (filter) {
+      case 'overdue':
+        return dueDate && dueDate < today && task.status !== 'complete';
+      case 'completed':
+        return task.status === 'complete';
+      case 'upcoming':
+      default:
+        return task.status !== 'complete' && (!dueDate || dueDate >= today);
+    }
+  });
+
+  // Show loading state if tasks are being fetched
+  if (loading) {
+    return (
+      <div className="bg-white rounded-lg shadow animate-pulse p-6">
+        <div className="h-4 bg-gray-200 rounded w-1/4 mb-4"></div>
+        <div className="space-y-3">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="h-8 bg-gray-200 rounded"></div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // Render the task list
+  return (
+    <div className="bg-white rounded-lg shadow">
+      <TaskListHeader />
+      <TaskListFilters 
+        activeFilter={filter} 
+        onFilterChange={setFilter}
+        counts={{
+          upcoming: tasks.filter(t => {
+            const dueDate = t.due_date ? new Date(t.due_date) : null;
+            return t.status !== 'complete' && (!dueDate || dueDate >= new Date());
+          }).length,
+          overdue: tasks.filter(t => {
+            const dueDate = t.due_date ? new Date(t.due_date) : null;
+            return dueDate && dueDate < new Date() && t.status !== 'complete';
+          }).length,
+          completed: tasks.filter(t => t.status === 'complete').length
+        }}
+      />
+      
+      <div className="divide-y divide-gray-100">
+        {/* Render each task item */}
+        {filteredTasks.map(task => (
+          <TaskItem
+            key={task.id}
+            task={task}
+          />
+        ))}
+        
+        {/* Show message if no tasks match the current filter */}
+        {filteredTasks.length === 0 && (
+          <div className="p-4 text-center text-gray-500">
+            No {filter} tasks
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
