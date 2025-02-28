@@ -1,6 +1,8 @@
 import React from 'react';
 import { Calendar, User } from 'lucide-react';
 import { useUserStore } from '../../lib/store/user';
+import DatePicker from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
 
 export interface TaskFormData {
   title: string;
@@ -31,6 +33,16 @@ export const TaskForm: React.FC<TaskFormProps> = ({
 
   const handleSubmitClick = () => {
     onSubmit(formData);
+  };
+
+  // Convert string to Date object for DatePicker, and back to string for formData
+  const selectedDate = formData.due_date ? new Date(formData.due_date) : null;
+
+  const handleDateChange = (date: Date | null) => {
+    setFormData(prev => ({
+      ...prev,
+      due_date: date ? date.toISOString().split('T')[0] : undefined
+    }));
   };
 
   return (
@@ -102,13 +114,15 @@ export const TaskForm: React.FC<TaskFormProps> = ({
           Due Date
         </label>
         <div className="mt-1 relative">
-          <input
-            type="date"
-            value={formData.due_date || ''}
-            onChange={e => setFormData(prev => ({ ...prev, due_date: e.target.value || undefined }))}
+          <DatePicker
+            selected={selectedDate}
+            onChange={handleDateChange}
             className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+            dateFormat="yyyy-MM-dd"
+            placeholderText="Select a date"
+            disabled={isSubmitting}
           />
-          <Calendar className="absolute right-3 top-2 h-4 w-4 text-gray-400" />
+          <Calendar className="absolute right-3 top-2 h-4 w-4 text-gray-400 pointer-events-none" />
         </div>
       </div>
 
