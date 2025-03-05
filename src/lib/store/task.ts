@@ -23,8 +23,10 @@ interface TaskState {
       field_id: string;
       value: any;
       custom_fields: {
+        id: string;
         name: string;
         type: string;
+        options: any;
       };
     }>;
   }>;
@@ -257,31 +259,38 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       console.log("Task Result:", taskResult);
       if (taskResult.error) throw taskResult.error;
       const { project_id } = taskResult.data;
+
       // Fetch the other data in parallel after getting the project_id.
       const [subtasksResult, commentsResult, customFieldsResult, ticketFieldsResult] = await Promise.all([
         supabase.from('subtasks').select('*').eq('ticket_id', taskId).order('created_at'),
         supabase.from('task_comments').select('*').eq('ticket_id', taskId).order('created_at'),
-        supabase.from('custom_fields').select('*').eq('project_id', project_id),
-        supabase.from('ticket_custom_fields').select('*').eq('ticket_id', taskId),
+        supabase.from('custom_fields').select('*').eq('project_id', project_id), // Fetch all fields for the project
+        supabase.from('ticket_custom_fields').select('*').eq('ticket_id', taskId), // Fetch task-specific custom field values
       ]);
+
       console.log("Custom Fields Result:", customFieldsResult);
       console.log("Ticket Custom Fields Result:", ticketFieldsResult);
+
       if (subtasksResult.error) throw subtasksResult.error;
       if (commentsResult.error) throw commentsResult.error;
       if (customFieldsResult.error) throw customFieldsResult.error;
       if (ticketFieldsResult.error) throw ticketFieldsResult.error;
-      // Merge custom fields with ticket-specific values.
+
+      // Merge custom fields with ticket-specific values, including options
       const customFields = customFieldsResult.data.map((field) => {
         const ticketField = ticketFieldsResult.data.find((tcf) => tcf.field_id === field.id);
         return {
           field_id: field.id,
           value: ticketField?.value || '',
           custom_fields: {
+            id: field.id,
             name: field.name,
             type: field.type,
+            options: field.options, // Include the options field from custom_fields
           },
         };
       });
+
       console.log("Final Custom Fields to be set:", customFields);
       return {
         task: taskResult.data,
@@ -500,13 +509,30 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
   updateComment: async (commentId, content) => {
     try {
+      // Get the current authenticated user
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError) throw authError || new Error('User not authenticated');
+
+      const currentUserId = user.id;
+
+      // Fetch the comment to check who created it
+      const { data: comment, error: fetchError } = await supabase
+        .from('task_comments')
+        .select('created_by')
+        .eq('id', commentId)
+        .single();
+
+      if (fetchError) throw fetchError;
+      if (!comment || comment.created_by !== currentUserId) {
+        throw new Error('You are not authorized to edit this comment');
+      }
+
+      // Update the comment if authorized
       const { error } = await supabase
         .from('task_comments')
-        .update({
-          content,
-          updated_at: new Date().toISOString(),
-        })
+        .update({ content, updated_at: new Date().toISOString() })
         .eq('id', commentId);
+
       if (error) throw error;
       set({ error: null });
     } catch (error: any) {
@@ -517,7 +543,30 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
   deleteComment: async (commentId) => {
     try {
-      const { error } = await supabase.from('task_comments').delete().eq('id', commentId);
+      // Get the current authenticated user
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError) throw authError || new Error('User not authenticated');
+
+      const currentUserId = user.id;
+
+      // Fetch the comment to check who created it
+      const { data: comment, error: fetchError } = await supabase
+        .from('task_comments')
+        .select('created_by')
+        .eq('id', commentId)
+        .single();
+
+      if (fetchError) throw fetchError;
+      if (!comment || comment.created_by !== currentUserId) {
+        throw new Error('You are not authorized to delete this comment');
+      }
+
+      // Delete the comment if authorized
+      const { error } = await supabase
+        .from('task_comments')
+        .delete()
+        .eq('id', commentId);
+
       if (error) throw error;
       set({ error: null });
     } catch (error: any) {

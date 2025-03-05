@@ -5,6 +5,7 @@ import { Trash2, Upload, Edit2, Check, X } from 'lucide-react';
 import { useTaskStore, TaskComment } from '../../lib/store/task';
 import { useAttachmentStore } from '../../lib/store/attachment/store';
 import { useUserStore } from '../../lib/store/user';
+import { useAuthStore } from '../../lib/store/auth'; // Import useAuthStore to get current user
 import { AttachmentList } from './AttachmentList';
 import { formatUserDisplay } from '../../lib/utils/user-display';
 import { MentionsInput } from './MentionsInput'; // Import the MentionsInput component
@@ -30,6 +31,8 @@ export const CommentList: React.FC<CommentListProps> = ({ taskId, comments, onUp
   const { addComment, deleteComment, updateComment } = useTaskStore();
   const { attachments, uploadAttachment, deleteAttachment, fetchAttachments } = useAttachmentStore();
   const { users } = useUserStore();
+  const { user } = useAuthStore(); // Get the current authenticated user
+  const currentUserId = user?.id; // Get the current user's ID
 
   // Handler for adding a new comment.
   const handleAddComment = async (e: React.FormEvent) => {
@@ -102,14 +105,14 @@ export const CommentList: React.FC<CommentListProps> = ({ taskId, comments, onUp
 
   // Utility function to get the display name of a comment author.
   const getCommentAuthor = (userId: string) => {
-    const user = users.find(u => u.id === userId);
+    const user = users.find((u) => u.id === userId);
     return formatUserDisplay(user);
   };
 
   return (
     <div className="space-y-4">
       {/* Existing comments */}
-      {comments.map(comment => (
+      {comments.map((comment) => (
         <div key={comment.id} className="bg-gray-50 rounded-lg p-3 space-y-1 group">
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium text-gray-900">
@@ -119,26 +122,29 @@ export const CommentList: React.FC<CommentListProps> = ({ taskId, comments, onUp
               <span className="text-xs text-gray-500">
                 {format(new Date(comment.created_at), 'MMM d, yyyy h:mm a')}
               </span>
-              <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center space-x-1">
-                <button
-                  onClick={() => {
-                    setEditingComment(comment.id);
-                    setEditedContent(comment.content);
-                  }}
-                  className="p-1 text-gray-400 hover:text-gray-500 rounded"
-                >
-                  <Edit2 className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={() => handleDeleteComment(comment.id)}
-                  className="p-1 text-red-400 hover:text-red-500 rounded"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
+              {/* Only show edit/delete icons if the current user created the comment */}
+              {currentUserId === comment.created_by && (
+                <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center space-x-1">
+                  <button
+                    onClick={() => {
+                      setEditingComment(comment.id);
+                      setEditedContent(comment.content);
+                    }}
+                    className="p-1 text-gray-400 hover:text-gray-500 rounded"
+                  >
+                    <Edit2 className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => handleDeleteComment(comment.id)}
+                    className="p-1 text-red-400 hover:text-red-500 rounded"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
             </div>
           </div>
-          
+
           {editingComment === comment.id ? (
             <div className="mt-2 flex items-start space-x-2">
               <textarea
@@ -189,7 +195,7 @@ export const CommentList: React.FC<CommentListProps> = ({ taskId, comments, onUp
             users={users}
           />
         </div>
-        
+
         <div className="flex justify-between items-center">
           <div>
             <input

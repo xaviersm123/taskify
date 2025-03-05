@@ -1,5 +1,4 @@
 // TaskDetails.tsx
-
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Calendar, User, Folder, AlertTriangle } from 'lucide-react';
@@ -14,7 +13,7 @@ import { useTaskUpdates } from '../../hooks/useTaskUpdates';
 import { formatUserDisplay } from '../../lib/utils/user-display';
 import { UserAvatar } from '../common/UserAvatar';
 import { useAuthStore } from '../../lib/store/auth';
-import { ActivityLogList } from '../tasks/ActivityLogList'; // Import the new component
+import { ActivityLogList } from '../tasks/ActivityLogList';
 
 interface TaskDetailsProps {
   taskId: string;
@@ -32,7 +31,7 @@ export const TaskDetails: React.FC<TaskDetailsProps> = ({
   const [subtasks, setSubtasks] = useState<Subtask[]>([]);
   const [comments, setComments] = useState<TaskComment[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showActivityLogs, setShowActivityLogs] = useState(false); // State to toggle activity logs
+  const [showActivityLogs, setShowActivityLogs] = useState(false);
   const { fetchTaskDetails, updateTask, deleteTask, updateTaskCustomField } = useTaskStore();
   const { users, fetchUsers } = useUserStore();
   const { projects, fetchProjects } = useProjectStore();
@@ -40,7 +39,6 @@ export const TaskDetails: React.FC<TaskDetailsProps> = ({
   const { user } = useAuthStore();
   const currentUserId = user?.id;
 
-  // Function to load task details from the store
   const loadTaskDetails = async () => {
     try {
       setLoading(true);
@@ -110,6 +108,17 @@ export const TaskDetails: React.FC<TaskDetailsProps> = ({
 
   const currentColumn = columns.find((col) => col.id === task.column_id);
   const currentProject = projects.find((p) => p.id === task.project_id);
+
+  // Helper function to parse jsonb options safely
+  const parseOptions = (options: any): string[] => {
+    if (!options) return [];
+    try {
+      return Array.isArray(options) ? options : JSON.parse(options);
+    } catch (error) {
+      console.error('Failed to parse options:', error);
+      return [];
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
@@ -212,21 +221,45 @@ export const TaskDetails: React.FC<TaskDetailsProps> = ({
                         <span className="w-32 text-sm text-gray-700">
                           {field.custom_fields.name}
                         </span>
-                        <input
-                          type={field.custom_fields.type === 'number' ? 'number' : 'text'}
-                          value={field.value || ''}
-                          onChange={(e) => {
-                            const newValue = e.target.value;
-                            setTask({
-                              ...task,
-                              customFields: task.customFields.map((f) =>
-                                f.field_id === field.field_id ? { ...f, value: newValue } : f
-                              ),
-                            });
-                          }}
-                          onBlur={(e) => handleCustomFieldChange(field.field_id, e.target.value)}
-                          className="w-48 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                        />
+                        {field.custom_fields.type === 'select' ? (
+                          <select
+                            value={field.value || ''}
+                            onChange={(e) => {
+                              const newValue = e.target.value;
+                              setTask({
+                                ...task,
+                                customFields: task.customFields.map((f) =>
+                                  f.field_id === field.field_id ? { ...f, value: newValue } : f
+                                ),
+                              });
+                            }}
+                            onBlur={(e) => handleCustomFieldChange(field.field_id, e.target.value)}
+                            className="w-48 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                          >
+                            <option value="">Select an option</option>
+                            {parseOptions(field.custom_fields.options).map((option: string) => (
+                              <option key={option} value={option}>
+                                {option}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            type={field.custom_fields.type === 'number' ? 'number' : 'text'}
+                            value={field.value || ''}
+                            onChange={(e) => {
+                              const newValue = e.target.value;
+                              setTask({
+                                ...task,
+                                customFields: task.customFields.map((f) =>
+                                  f.field_id === field.field_id ? { ...f, value: newValue } : f
+                                ),
+                              });
+                            }}
+                            onBlur={(e) => handleCustomFieldChange(field.field_id, e.target.value)}
+                            className="w-48 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                          />
+                        )}
                       </div>
                     ))
                   ) : (
@@ -273,7 +306,7 @@ export const TaskDetails: React.FC<TaskDetailsProps> = ({
                   />
                 </div>
 
-                {/* Activity Logs Toggle/Button */}
+                {/* Activity Logs */}
                 <div className="space-y-2">
                   <button
                     onClick={() => setShowActivityLogs(!showActivityLogs)}
