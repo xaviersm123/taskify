@@ -20,7 +20,7 @@ export const ProjectBoard = () => {
     completed: false,
     assignedToMe: false,
     dueThisWeek: false,
-    dueNextWeek: false
+    dueNextWeek: false,
   });
 
   // Handle invalid UUIDs
@@ -28,7 +28,6 @@ export const ProjectBoard = () => {
   try {
     validProjectId = projectId ? ensureCompleteUUID(projectId) : '';
   } catch (error) {
-    // Redirect to dashboard if invalid UUID
     navigate('/dashboard');
     return null;
   }
@@ -38,14 +37,20 @@ export const ProjectBoard = () => {
     return null;
   }
 
-  // Fetch project details, tasks, and members when projectId changes
+  // Debug store functions
+  console.log('fetchProjectById:', fetchProjectById);
+
+  // Fetch data when projectId changes
   useEffect(() => {
     const fetchData = async () => {
       try {
+        if (!fetchProjectById) {
+          throw new Error('fetchProjectById is not available in useProjectStore');
+        }
         await Promise.all([
           fetchProjectById(validProjectId),
           fetchTasksByProjectId(validProjectId),
-          fetchMembers(validProjectId)
+          fetchMembers(validProjectId),
         ]);
       } catch (error) {
         console.error('Error fetching project data:', error);
@@ -60,20 +65,15 @@ export const ProjectBoard = () => {
       <div className="flex-shrink-0 w-full sticky top-0 z-30 bg-white">
         <ProjectHeader />
       </div>
-
       <div className="flex-shrink-0 w-full sticky top-16 z-20 bg-white border-b">
-        <BoardHeader 
+        <BoardHeader
           projectId={validProjectId}
           filters={filters}
           onFilterChange={setFilters}
         />
       </div>
-
       <div className="flex-1 min-h-0 overflow-x-auto">
-        <BoardView 
-          projectId={validProjectId}
-          filters={filters}
-        />
+        <BoardView projectId={validProjectId} filters={filters} />
       </div>
     </div>
   );

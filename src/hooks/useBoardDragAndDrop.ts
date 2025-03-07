@@ -1,8 +1,10 @@
 import { useState, useCallback } from 'react';
 import { DragStartEvent, DragEndEvent } from '@dnd-kit/core';
+import { arrayMove } from '@dnd-kit/sortable';
 import { Task } from '../lib/store/task';
 import { BoardColumn } from '../lib/store/board';
 import { withRetry } from '../lib/utils/retry';
+import { useBoardStore } from '../lib/store/board';
 
 interface UseBoardDragAndDropProps {
   tasks: Task[];
@@ -16,77 +18,55 @@ export function useBoardDragAndDrop({ tasks, columns, updateTask }: UseBoardDrag
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
     const task = tasks.find(t => t.id === event.active.id);
-    console.log('Drag start:', {
-      taskId: event.active.id,
-      task: task,
-      data: event.active.data.current
-    });
     setActiveTask(task || null);
   }, [tasks]);
 
   const handleDragEnd = useCallback(async (event: DragEndEvent) => {
     const { active, over } = event;
-    
-    console.log('Drag end:', {
-      active: {
-        id: active?.id,
-        data: active?.data.current
-      },
-      over: {
-        id: over?.id,
-        data: over?.data.current
-      }
-    });
 
     if (!over || !active || isUpdating) return;
 
-    const draggedTask = tasks.find(task => task.id === active.id);
-    if (!draggedTask) {
-      console.log('No dragged task found');
-      return;
-    }
+    // Handle column drag
+    if (active.data.current?.type === 'column') {
+      const oldIndex = columns.findIndex(col => col.id === active.id);
+      const newIndex = columns.findIndex(col => col.id === over.id);
 
-    // Get the target column ID - either from the column itself or from the task's parent column
-    const targetColumnId = over.data.current?.type === 'column' 
-      ? over.id as string 
-      : over.data.current?.columnId as string;
-
-    console.log('Target column ID:', targetColumnId);
-    
-    if (!targetColumnId) {
-      console.log('No target column ID found');
-      return;
-    }
-
-    const targetColumn = columns.find(col => col.id === targetColumnId);
-    if (!targetColumn) {
-      console.log('Target column not found');
-      return;
-    }
-
-    // Only update if column changed
-    if (draggedTask.column_id !== targetColumn.id) {
-      console.log('Updating task column:', {
-        taskId: draggedTask.id,
-        fromColumn: draggedTask.column_id,
-        toColumn: targetColumn.id
-      });
-
-      setIsUpdating(true);
-      try {
-        await withRetry(() => 
-          updateTask(draggedTask.id, {
-            column_id: targetColumn.id,
-            status: getStatusFromColumnName(targetColumn.name)
-          })
-        );
-      } catch (error) {
-        console.error('Failed to update task:', error);
-      } finally {
-        setIsUpdating(false);
+      if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
+        const newColumns = arrayMove(columns, oldIndex, newIndex);
+        const updatedColumns = newColumns.map((col, index) => ({ ...col, position: index }));
+        await useBoardStore.getState().reorderColumns(updatedColumns);
       }
-    } else {
-      console.log('Task already in target column');
+    }
+    // Handle task drag
+    else if (active.data.current?.type === 'task') {
+      const draggedTask = tasks.find(task => task.id === active.id);
+      if (!draggedTask) return;
+
+      const targetColumnId =
+        over.data.current?.type === 'column'
+          ? (over.id as string)
+          : (over.data.current?.columnId as string);
+
+      if (!targetColumnId) return;
+
+      const targetColumn = columns.find(col => col.id === targetColumnId);
+      if (!targetColumn) return;
+
+      if (draggedTask.column_id !== targetColumn.id) {
+        setIsUpdating(true);
+        try {
+          await withRetry(() =>
+            updateTask(draggedTask.id, {
+              column_id: targetColumn.id,
+              status: getStatusFromColumnName(targetColumn.name),
+            })
+          );
+        } catch (error) {
+          console.error('Failed to update task:', error);
+        } finally {
+          setIsUpdating(false);
+        }
+      }
     }
 
     setActiveTask(null);
@@ -96,7 +76,7 @@ export function useBoardDragAndDrop({ tasks, columns, updateTask }: UseBoardDrag
     activeTask,
     isUpdating,
     handleDragStart,
-    handleDragEnd
+    handleDragEnd,
   };
 }
 

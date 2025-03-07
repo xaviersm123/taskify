@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { useDroppable } from '@dnd-kit/core';
+import { useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { TaskCard } from './TaskCard';
 import { CreateTaskDialog } from './CreateTaskDialog';
 import { ColumnContextMenu } from './ColumnContextMenu';
 import { Plus, Check, X } from 'lucide-react';
 import { useBoardStore } from '../../lib/store/board';
-import { useTaskStore } from '../../lib/store/task';
 import { Task } from '../../lib/store/task';
 
 interface ColumnProps {
@@ -18,21 +19,31 @@ interface ColumnProps {
   position: number;
 }
 
-export const Column: React.FC<ColumnProps> = ({ 
-  id, 
-  title, 
-  tasks, 
+export const Column: React.FC<ColumnProps> = ({
+  id,
+  title,
+  tasks,
   projectId,
   totalColumns,
-  position 
+  position,
 }) => {
-  const { setNodeRef } = useDroppable({
+  // Make the column sortable
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
     id,
-    data: {
-      type: 'column',
-      columnId: id,
-      accepts: ['task']
-    }
+    data: { type: 'column', columnId: id },
+  });
+
+  // Keep droppable functionality for tasks
+  const { setNodeRef: setDroppableRef } = useDroppable({
+    id,
+    data: { type: 'column', columnId: id, accepts: ['task'] },
   });
 
   const { updateColumn, deleteColumn } = useBoardStore();
@@ -42,6 +53,12 @@ export const Column: React.FC<ColumnProps> = ({
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [isChangingPosition, setIsChangingPosition] = useState(false);
   const [selectedPosition, setSelectedPosition] = useState(position);
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1, // Visual feedback during drag
+  };
 
   const handleSave = async () => {
     if (editedTitle.trim() && editedTitle !== title) {
@@ -86,9 +103,15 @@ export const Column: React.FC<ColumnProps> = ({
   const positionOptions = Array.from({ length: totalColumns }, (_, i) => i);
 
   return (
-    <div className="flex-shrink-0 w-[320px] bg-gray-50 rounded-lg flex flex-col max-h-full">
-      <div 
-        className="p-3 flex items-center justify-between border-b border-gray-200"
+    <div
+      ref={setNodeRef} // Sortable ref for the entire column
+      style={style}
+      className="flex-shrink-0 w-[320px] bg-gray-50 rounded-lg flex flex-col max-h-full"
+    >
+      <div
+        className="p-3 flex items-center justify-between border-b border-gray-200 cursor-grab"
+        {...listeners} // Drag handle on the header
+        {...attributes}
         onContextMenu={handleContextMenu}
       >
         <div className="flex items-center space-x-2">
@@ -132,8 +155,8 @@ export const Column: React.FC<ColumnProps> = ({
             </div>
           ) : (
             <>
-              <h3 
-                className="font-medium text-gray-900 cursor-pointer hover:text-gray-600" 
+              <h3
+                className="font-medium text-gray-900 cursor-pointer hover:text-gray-600"
                 onClick={() => setIsEditing(true)}
               >
                 {title}
@@ -145,20 +168,16 @@ export const Column: React.FC<ColumnProps> = ({
       </div>
 
       <div
-        ref={setNodeRef}
+        ref={setDroppableRef} // Droppable ref for task dropping
         className="flex-1 p-2 space-y-2 overflow-y-auto min-h-[100px]"
       >
         <SortableContext items={tasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
           {tasks.map(task => (
-            <TaskCard 
-              key={task.id} 
-              task={task} 
-              columnId={id}
-            />
+            <TaskCard key={task.id} task={task} columnId={id} />
           ))}
         </SortableContext>
-        
-        <button 
+
+        <button
           onClick={() => setIsCreateDialogOpen(true)}
           className="w-full p-2 flex items-center justify-center text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors duration-200"
         >

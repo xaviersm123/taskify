@@ -121,7 +121,11 @@ export const useBoardStore = create<BoardState>((set) => ({
     try {
       const updates = columns.map((col, index) => ({
         id: col.id,
-        position: index
+        name: col.name,
+        project_id: col.project_id,
+        position: index,
+        created_at: col.created_at,
+        // Add other required fields from your schema
       }));
 
       const { error } = await supabase
