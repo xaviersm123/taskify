@@ -32,13 +32,12 @@ export const CommentList: React.FC<CommentListProps> = ({ taskId, comments, onUp
   const { user } = useAuthStore();
   const currentUserId = user?.id;
 
-  // Debug logs to verify user and comment data
+  // Fetch attachments when taskId changes or on mount
   useEffect(() => {
-    console.log('Current User ID:', currentUserId);
-    comments.forEach((comment) =>
-      console.log(`Comment ${comment.id} created by:`, comment.created_by)
-    );
-  }, [currentUserId, comments]);
+    if (taskId) {
+      fetchAttachments(taskId);
+    }
+  }, [taskId, fetchAttachments]);
 
   // Drag and Drop Handlers
   useEffect(() => {
@@ -80,14 +79,12 @@ export const CommentList: React.FC<CommentListProps> = ({ taskId, comments, onUp
     if (!newComment.trim()) return;
 
     try {
-      console.log('Adding comment with mentioned users:', mentionedUserIds);
       await addComment(taskId, newComment.trim(), mentionedUserIds);
       setNewComment('');
       setMentionedUserIds([]);
       setErrorMessage(null);
       onUpdate();
     } catch (error: any) {
-      console.error('Failed to add comment:', error);
       setErrorMessage(error.message || 'Failed to add comment');
     }
   };
@@ -95,14 +92,12 @@ export const CommentList: React.FC<CommentListProps> = ({ taskId, comments, onUp
   const handleEditComment = async (commentId: string) => {
     if (!editedContent.trim()) return;
     try {
-      console.log(`Attempting to edit comment ${commentId} by user ${currentUserId}`);
       await updateComment(commentId, editedContent.trim());
       setEditingComment(null);
       setEditedContent('');
       setErrorMessage(null);
       onUpdate();
     } catch (error: any) {
-      console.error('Failed to update comment:', error);
       setErrorMessage(error.message || 'Failed to update comment');
     }
   };
@@ -110,12 +105,10 @@ export const CommentList: React.FC<CommentListProps> = ({ taskId, comments, onUp
   const handleDeleteComment = async (commentId: string) => {
     if (!window.confirm('Are you sure you want to delete this comment?')) return;
     try {
-      console.log(`Attempting to delete comment ${commentId} by user ${currentUserId}`);
       await deleteComment(commentId);
       setErrorMessage(null);
       onUpdate();
     } catch (error: any) {
-      console.error('Failed to delete comment:', error);
       setErrorMessage(error.message || 'Failed to delete comment');
     }
   };
@@ -133,11 +126,10 @@ export const CommentList: React.FC<CommentListProps> = ({ taskId, comments, onUp
   const handleMultipleFileUpload = async (files: File[]) => {
     try {
       const uploadPromises = files.map(file => uploadAttachment(taskId, file));
-      const results = await Promise.all(uploadPromises);
+      await Promise.all(uploadPromises);
       await fetchAttachments(taskId);
       setErrorMessage(null);
     } catch (error: any) {
-      console.error('Failed to upload files:', error);
       setErrorMessage(error.message || 'Failed to upload one or more files');
     }
   };
@@ -148,7 +140,6 @@ export const CommentList: React.FC<CommentListProps> = ({ taskId, comments, onUp
       await deleteAttachment(attachmentId);
       setErrorMessage(null);
     } catch (error: any) {
-      console.error('Failed to delete attachment:', error);
       setErrorMessage(error.message || 'Failed to delete attachment');
     }
   };
@@ -247,10 +238,7 @@ export const CommentList: React.FC<CommentListProps> = ({ taskId, comments, onUp
           <MentionsInput
             value={newComment}
             onChange={setNewComment}
-            onMentionsChange={(ids) => {
-              console.log('MentionsInput returned mentioned IDs:', ids);
-              setMentionedUserIds(ids);
-            }}
+            onMentionsChange={(ids) => setMentionedUserIds(ids)}
             placeholder="Add a comment..."
             users={users}
           />
@@ -276,7 +264,7 @@ export const CommentList: React.FC<CommentListProps> = ({ taskId, comments, onUp
               <input
                 ref={fileInputRef}
                 type="file"
-                multiple // Enable multiple file selection
+                multiple
                 onChange={handleFileUpload}
                 className="hidden"
                 accept="image/*,.pdf,.doc,.docx,.txt"

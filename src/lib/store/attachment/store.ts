@@ -91,21 +91,24 @@ export const useAttachmentStore = create<AttachmentState>((set, get) => ({
   },
 
   fetchAttachments: async (ticketId: string) => {
-    set({ loading: true });
+    // Clear existing attachments and set loading state
+    set({ attachments: [], loading: true });
+
     try {
       const { data, error } = await supabase
         .from('attachments')
         .select('*')
-        .eq('ticket_id', ticketId)
+        .eq('ticket_id', ticketId) // Filter by ticket_id
         .order('created_at', { ascending: false });
 
       if (error) throw error;
 
-      set({ attachments: data || [], loading: false, error: null });
-    } catch (error: any) {
-      set({ error: error.message, loading: false });
-      throw error;
-    }
+      console.log('Fetched attachments:', data); // Debug log
+    set({ attachments: data || [], loading: false, error: null });
+  } catch (error: any) {
+    console.error('Fetch error:', error.message);
+    set({ error: error.message, loading: false });
+  }
   },
 
   // Optional: Add a batch upload method if needed
