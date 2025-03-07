@@ -1,28 +1,85 @@
+// task.ts
 import { create } from 'zustand';
-import { supabase } from '../../supabase/client';
-import { TaskState, Task, Subtask, TaskComment } from './types';
+import { supabase } from '../supabase/client';
+import { Task, Subtask, TaskComment } from './task/types';
+import { TaskDetails } from '../../components/board/TaskDetails';
+
+interface TaskState {
+  tasks: Task[];
+  loading: boolean;
+  error: string | null;
+  selectedTaskId: string | null;
+  setSelectedTaskId: (taskId: string | null) => void;
+  createTask: (data: Partial<Task>) => Promise<Task>;
+  updateTask: (id: string, data: Partial<Task>) => Promise<void>;
+  deleteTask: (id: string) => Promise<void>;
+  fetchTasks: (projectId: string) => Promise<void>;
+  fetchAssignedTasks: (userId: string) => Promise<void>;
+  fetchTaskDetails: (taskId: string) => Promise<{
+    task: Task;
+    subtasks: Subtask[];
+    comments: TaskComment[];
+    customFields: Array<{
+      field_id: string;
+      value: any;
+      custom_fields: {
+        id: string;
+        name: string;
+        type: string;
+        options: any;
+      };
+    }>;
+  }>;
+  updateTaskCustomField: (ticketId: string, fieldId: string, value: any) => Promise<void>;
+  deleteTaskCustomField: (ticketId: string, fieldId: string) => Promise<void>;
+  addSubtask: (taskId: string, data: { title: string; assignee_id?: string; due_date?: string; created_by: string }) => Promise<void>;
+  updateSubtask: (subtaskId: string, data: Partial<Subtask>) => Promise<void>;
+  toggleSubtask: (subtaskId: string, completed: boolean) => Promise<void>;
+  deleteSubtask: (subtaskId: string) => Promise<void>;
+  addComment: (taskId: string, content: string, mentionedUsers?: string[]) => Promise<TaskComment>;
+  updateComment: (commentId: string, content: string) => Promise<void>;
+  deleteComment: (commentId: string) => Promise<void>;
+}
 
 export const useTaskStore = create<TaskState>((set, get) => ({
   tasks: [],
   loading: false,
   error: null,
   selectedTaskId: null,
-  setSelectedTaskId: (id) => set({ selectedTaskId: id }),
 
-  fetchTasks: async (projectId: string) => {
-    set({ loading: true, error: null });
+  setSelectedTaskId: (taskId) => {
+    set({ selectedTaskId: taskId });
+  },
+
+  // Helper function to log activity
+  logActivity: async (eventType: 'INSERT' | 'UPDATE_COLUMN' | 'DELETE', taskId: string, payload: any) => {
     try {
-      const { data, error } = await supabase
-        .from('tickets')
-        .select('*')
-        .eq('project_id', projectId)
-        .order('created_at', { ascending: true });
+      // Get the current authenticated user
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError) {
+        console.warn('No authenticated user found, logging as anonymous:', authError);
+      }
+      const currentUserId = user?.id || 'anonymous';
 
-      if (error) throw error;
-      set({ tasks: data || [], loading: false });
-    } catch (error: any) {
-      set({ error: error.message, loading: false });
-      throw error;
+      const logEntry = {
+        event_type: eventType,
+        table_name: 'tickets',
+        record_id: taskId, // Use taskId as record_id (ticket_id)
+        payload: JSON.stringify(payload),
+        created_by: currentUserId, // Use authenticated user ID or 'anonymous'
+      };
+
+      const { error } = await supabase
+        .from('activity_log')
+        .insert([logEntry]);
+
+      if (error) {
+        console.error('Failed to log task activity:', error);
+      } else {
+        console.log('Task activity logged successfully:', logEntry);
+      }
+    } catch (error) {
+      console.error('Error logging task activity:', error);
     }
   },
 
@@ -33,22 +90,42 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         .insert([data])
         .select()
         .single();
-
       if (error) throw error;
-
-      set(state => ({
+      set((state) => ({
         tasks: [...state.tasks, task],
-        error: null
+        error: null,
       }));
 
-      // Add a notification for the assignee if the task has an assignee
-      if (data.assignee_id) {
-        await supabase.from('notifications').insert({
-          user_id: data.assignee_id,
-          content: `You have been assigned a new task: ${data.title}`,
-          link: `/tasks/${task.id}`,
-          read: false
-        });
+      // Log the INSERT after creating the task
+      const payload = {
+        title: task.title || 'Untitled Task',
+        created_at: task.created_at || new Date().toISOString(),
+        column_id: task.column_id,
+      };
+      await get().logActivity('INSERT', task.id, payload);
+
+      // Get the current authenticated user
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError) throw authError;
+      const currentUserId = user?.id;
+
+      // Send notification if there’s an assignee and it’s not the current user
+      if (task.assignee_id && task.assignee_id !== currentUserId) {
+        const { error: notifError } = await supabase.from('notifications').insert([
+          {
+            user_id: task.assignee_id,
+            type: 'assignment',
+            content: `You were assigned to a new task: ${task.title}`,
+            link: `/projects/${task.project_id}?task=${task.id}`,
+            metadata: {
+              task_id: task.id,
+              project_id: task.project_id,
+            },
+            read: false,
+            created_by: currentUserId,
+          },
+        ]);
+        if (notifError) console.error('Failed to create assignment notification:', notifError);
       }
 
       return task;
@@ -60,44 +137,57 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
   updateTask: async (id, data) => {
     try {
-      console.log('Updating task:', { id, data }); // Debug log
+      // Get the current task to compare old values
+      const currentTask = get().tasks.find((t) => t.id === id) || (await supabase.from('tickets').select('*').eq('id', id).single()).data;
+      if (!currentTask) throw new Error('Task not found');
 
-      const { error } = await supabase
-        .from('tickets')
-        .update(data)
-        .eq('id', id);
-
+      const { error } = await supabase.from('tickets').update(data).eq('id', id);
       if (error) throw error;
 
-      // Create notification if assignee changed
-      if (data.assignee_id) {
-        console.log('Creating assignment notification for:', data.assignee_id); // Debug log
-        
-        const { data: task } = await supabase
-          .from('tickets')
-          .select('project_id, title')
-          .eq('id', id)
-          .single();
+      // Update local state
+      set((state) => ({
+        tasks: state.tasks.map((t) => (t.id === id ? { ...t, ...data } : t)),
+        error: null,
+      }));
 
-        await supabase.from('notifications').insert([{
-          user_id: data.assignee_id,
-          type: 'assignment',
-          content: 'You have been assigned a new task',
-          link: `/projects/${task?.project_id}?task=${id}`,
-          metadata: {
-            task_id: id,
-            project_id: task?.project_id,
-            task_title: task?.title
-          }
-        }]);
+      // Log only column moves
+      const oldColumnId = currentTask.column_id;
+      const newColumnId = data.column_id || oldColumnId;
+      if (newColumnId !== oldColumnId) {
+        const payload = {
+          old_column_id: oldColumnId,
+          new_column_id: newColumnId,
+          updated_at: new Date().toISOString(),
+        };
+        await get().logActivity('UPDATE_COLUMN', id, payload);
       }
 
-      set(state => ({
-        tasks: state.tasks.map(t => t.id === id ? { ...t, ...data } : t),
-        error: null
-      }));
+      // Get the current authenticated user
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError) throw authError;
+      const currentUserId = user?.id;
+
+      // Check if assignee changed and notify the new assignee
+      const oldAssigneeId = currentTask.assignee_id;
+      const newAssigneeId = data.assignee_id || oldAssigneeId;
+      if (newAssigneeId && newAssigneeId !== oldAssigneeId && newAssigneeId !== currentUserId) {
+        const { error: notifError } = await supabase.from('notifications').insert([
+          {
+            user_id: newAssigneeId,
+            type: 'assignment',
+            content: `You were assigned to task: ${currentTask.title}`,
+            link: `/projects/${currentTask.project_id}?task=${id}`,
+            metadata: {
+              task_id: id,
+              project_id: currentTask.project_id,
+            },
+            read: false,
+            created_by: currentUserId,
+          },
+        ]);
+        if (notifError) console.error('Failed to create assignment notification:', notifError);
+      }
     } catch (error: any) {
-      console.error('Failed to update task:', error); // Debug log
       set({ error: error.message });
       throw error;
     }
@@ -105,19 +195,42 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
   deleteTask: async (id) => {
     try {
-      const { error } = await supabase
-        .from('tickets')
-        .delete()
-        .eq('id', id);
+      // Get the task to log its details before deletion
+      const { data: task, error: fetchError } = await supabase.from('tickets').select('*').eq('id', id).single();
+      if (fetchError) throw fetchError;
 
+      const { error } = await supabase.from('tickets').delete().eq('id', id);
       if (error) throw error;
 
-      set(state => ({
-        tasks: state.tasks.filter(t => t.id !== id),
-        error: null
+      set((state) => ({
+        tasks: state.tasks.filter((t) => t.id !== id),
+        error: null,
       }));
+
+      // Log the DELETE after deleting the task
+      const payload = {
+        title: task.title || 'Untitled Task',
+        deleted_at: new Date().toISOString(),
+      };
+      await get().logActivity('DELETE', id, payload);
     } catch (error: any) {
       set({ error: error.message });
+      throw error;
+    }
+  },
+
+  fetchTasks: async (projectId) => {
+    set({ loading: true, error: null });
+    try {
+      const { data, error } = await supabase
+        .from('tickets')
+        .select('*')
+        .eq('project_id', projectId)
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+      set({ tasks: data || [], loading: false });
+    } catch (error: any) {
+      set({ error: error.message, loading: false });
       throw error;
     }
   },
@@ -130,7 +243,6 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         .select('*')
         .eq('assignee_id', userId)
         .order('created_at', { ascending: false });
-
       if (error) throw error;
       set({ tasks: data || [], loading: false });
     } catch (error: any) {
@@ -141,109 +253,122 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
   fetchTaskDetails: async (taskId) => {
     try {
-      const [taskResult, subtasksResult, commentsResult, customFieldsResult, ticketFieldsResult] = await Promise.all([
-        supabase.from('tickets').select('*').eq('id', taskId).single(),
+      console.log("Fetching task details for Task ID:", taskId);
+      // Fetch task details first to get the project_id.
+      const taskResult = await supabase.from('tickets').select('*').eq('id', taskId).single();
+      console.log("Task Result:", taskResult);
+      if (taskResult.error) throw taskResult.error;
+      const { project_id } = taskResult.data;
+
+      // Fetch the other data in parallel after getting the project_id.
+      const [subtasksResult, commentsResult, customFieldsResult, ticketFieldsResult] = await Promise.all([
         supabase.from('subtasks').select('*').eq('ticket_id', taskId).order('created_at'),
         supabase.from('task_comments').select('*').eq('ticket_id', taskId).order('created_at'),
-        supabase.from('custom_fields').select('*').eq('project_id', taskResult.data?.project_id),
-        supabase.from('ticket_custom_fields').select('*').eq('ticket_id', taskId),
+        supabase.from('custom_fields').select('*').eq('project_id', project_id), // Fetch all fields for the project
+        supabase.from('ticket_custom_fields').select('*').eq('ticket_id', taskId), // Fetch task-specific custom field values
       ]);
-  
-      if (taskResult.error) throw taskResult.error;
+
+      console.log("Custom Fields Result:", customFieldsResult);
+      console.log("Ticket Custom Fields Result:", ticketFieldsResult);
+
       if (subtasksResult.error) throw subtasksResult.error;
       if (commentsResult.error) throw commentsResult.error;
       if (customFieldsResult.error) throw customFieldsResult.error;
       if (ticketFieldsResult.error) throw ticketFieldsResult.error;
-  
-      // Merge custom fields with ticket-specific values
+
+      // Merge custom fields with ticket-specific values, including options
       const customFields = customFieldsResult.data.map((field) => {
         const ticketField = ticketFieldsResult.data.find((tcf) => tcf.field_id === field.id);
         return {
-          ...field,
-          value: ticketField?.value || '', // Assign value if it exists, else empty
+          field_id: field.id,
+          value: ticketField?.value || '',
+          custom_fields: {
+            id: field.id,
+            name: field.name,
+            type: field.type,
+            options: field.options, // Include the options field from custom_fields
+          },
         };
       });
-  
+
+      console.log("Final Custom Fields to be set:", customFields);
       return {
         task: taskResult.data,
         subtasks: subtasksResult.data || [],
         comments: commentsResult.data || [],
-        customFields, // Include combined custom fields
+        customFields,
       };
-    } catch (error) {
-      set({ error: error.message });
+    } catch (error: any) {
+      console.error('Failed to fetch task details:', error);
       throw error;
     }
-  };
-  
-  
+  },
 
-  addSubtask: async (taskId, data) => {
+  updateTaskCustomField: async (ticketId, fieldId, value) => {
     try {
       const { error } = await supabase
-        .from('subtasks')
-        .insert([{
-          ticket_id: taskId,
-          title: data.title,
-          assignee_id: data.assignee_id,
-          due_date: data.due_date,
-          completed: false
-        }]);
-
+        .from('ticket_custom_fields')
+        .upsert({ ticket_id: ticketId, field_id: fieldId, value })
+        .eq('ticket_id', ticketId)
+        .eq('field_id', fieldId);
       if (error) throw error;
-      set({ error: null });
     } catch (error: any) {
       set({ error: error.message });
       throw error;
     }
   },
 
-  updateSubtask: async (subtaskId: string, data: Partial<Subtask>) => {
+  deleteTaskCustomField: async (ticketId, fieldId) => {
     try {
-      console.log('Updating subtask:', { subtaskId, data }); // Debug log
-
       const { error } = await supabase
-        .from('subtasks')
-        .update(data)
-        .eq('id', subtaskId);
-
+        .from('ticket_custom_fields')
+        .delete()
+        .eq('ticket_id', ticketId)
+        .eq('field_id', fieldId);
       if (error) throw error;
+    } catch (error: any) {
+      set({ error: error.message });
+      throw error;
+    }
+  },
 
-      // Create notification if assignee changed
-      if (data.assignee_id) {
-        console.log('Creating subtask assignment notification for:', data.assignee_id); // Debug log
-        
-        const { data: subtask } = await supabase
-          .from('subtasks')
-          .select('ticket_id, title')
-          .eq('id', subtaskId)
-          .single();
+  /**
+   * Add a new subtask to a task
+   * 
+   * @param taskId - ID of the parent task
+   * @param data - Data for the new subtask
+   */
+  addSubtask: async (taskId, data) => {
+    try {
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError || !authData.user?.id) throw authError || new Error('User not found');
+      const currentUserId = authData.user.id;
+  
+      const { data: newSubtask, error } = await supabase.from('subtasks').insert([
+        {
+          ticket_id: taskId,
+          title: data.title,
+          assignee_id: data.assignee_id,
+          due_date: data.due_date,
+          completed: false,
+          created_by: currentUserId, // Use fetched user ID
+        },
+      ]).select().single();
+      if (error) throw error;
+      set({ error: null });
+      return newSubtask; // Return the new subtask for logging if needed
+    } catch (error: any) {
+      set({ error: error.message });
+      throw error;
+    }
+  },
 
-        if (subtask) {
-          const { data: task } = await supabase
-            .from('tickets')
-            .select('project_id')
-            .eq('id', subtask.ticket_id)
-            .single();
-
-          await supabase.from('notifications').insert([{
-            user_id: data.assignee_id,
-            type: 'assignment',
-            content: 'You have been assigned a new subtask',
-            link: `/projects/${task?.project_id}?task=${subtask.ticket_id}`,
-            metadata: {
-              subtask_id: subtaskId,
-              task_id: subtask.ticket_id,
-              project_id: task?.project_id,
-              subtask_title: subtask.title
-            }
-          }]);
-        }
-      }
-
+  updateSubtask: async (subtaskId, data) => {
+    try {
+      const { error } = await supabase.from('subtasks').update(data).eq('id', subtaskId);
+      if (error) throw error;
       set({ error: null });
     } catch (error: any) {
-      console.error('Failed to update subtask:', error); // Debug log
       set({ error: error.message });
       throw error;
     }
@@ -255,10 +380,9 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         .from('subtasks')
         .update({
           completed,
-          completed_at: completed ? new Date().toISOString() : null
+          completed_at: completed ? new Date().toISOString() : null,
         })
         .eq('id', subtaskId);
-
       if (error) throw error;
       set({ error: null });
     } catch (error: any) {
@@ -269,11 +393,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
   deleteSubtask: async (subtaskId) => {
     try {
-      const { error } = await supabase
-        .from('subtasks')
-        .delete()
-        .eq('id', subtaskId);
-
+      const { error } = await supabase.from('subtasks').delete().eq('id', subtaskId);
       if (error) throw error;
       set({ error: null });
     } catch (error: any) {
@@ -282,20 +402,35 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     }
   },
 
-  addComment: async (taskId: string, content: string, mentionedUsers: string[] = []) => {
+  // UPDATED addComment FUNCTION (unchanged from your version)
+  addComment: async (taskId, content, mentionedUsers: string[] = []) => {
+    console.log(`addComment called at ${new Date().toISOString()} with taskId: ${taskId}, mentionedUsers: ${mentionedUsers}`);
     try {
-      console.log('Adding comment with data:', { taskId, content, mentionedUsers });
-      
-      // Get the current user only once and store its id.
+      // Get the current user.
       const { data: authData, error: authError } = await supabase.auth.getUser();
       if (authError || !authData.user?.id) {
         console.error('Error getting current user:', authError);
         throw authError || new Error('User not found');
       }
       const currentUserId = authData.user.id;
+      const userMetadata = authData.user.user_metadata;
+      const mentionerName = userMetadata?.firstName || 'Someone';
       console.log('Current user id:', currentUserId);
-      
-      // Insert the comment into the 'task_comments' table.
+  
+      // Fetch the mentioner's name from the profiles table
+      const { data: creatorData, error: creatorError } = await supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('id', currentUserId)
+        .single();
+  
+      // Set a fallback name if fetching fails or full_name is missing
+      let creatorName = 'Someone';
+      if (!creatorError && creatorData?.full_name) {
+        creatorName = creatorData.full_name;
+      }
+  
+      // Insert the comment
       const { data: comment, error: commentError } = await supabase
         .from('task_comments')
         .insert([
@@ -303,49 +438,46 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             ticket_id: taskId,
             content,
             created_by: currentUserId,
-            // Save mentioned_users as an array if there are any, or null otherwise.
-            mentioned_users: mentionedUsers.length > 0 ? mentionedUsers : null,
-          }
+            mentioned_users: mentionedUsers,
+          },
         ])
-        .select()  // Return the inserted row(s)
+        .select()
         .single();
-        
+  
       if (commentError) {
         console.error('Error adding comment:', commentError);
         throw commentError;
       }
-      
+  
       console.log('Comment added successfully:', comment);
       set({ error: null });
-      
-      // If there are mentioned users, create notifications.
+  
+      // Create notifications for each mentioned user if any
       if (mentionedUsers.length > 0) {
         console.log('Processing notifications for mentioned users:', mentionedUsers);
-        
-        // Fetch task details to get the project info.
         const { data: taskData, error: taskError } = await supabase
           .from('tickets')
           .select('project_id, title')
           .eq('id', taskId)
           .single();
-          
-        if (taskError) {
+  
+        if (taskError || !taskData) {
           console.error('Error fetching task details for notification:', taskError);
-        } else if (!taskData) {
-          console.error('No task data returned for taskId:', taskId);
         } else {
           console.log('Task data for notification:', taskData);
-          // Loop through each mentioned user and insert a notification.
+          // Use the task title, with a fallback if it’s missing
+          const taskTitle = taskData.title || 'a task';
           for (const mentionedUser of mentionedUsers) {
             console.log(`Attempting to create notification for user: ${mentionedUser}`);
-            
+            // Updated notification content with the mentioner's name
+            const notificationContent = `${mentionerName} mentioned you in ${taskTitle}`;
             const { data: notifData, error: notifError } = await supabase
               .from('notifications')
               .insert([
                 {
                   user_id: mentionedUser,
                   type: 'mention',
-                  content: `You were mentioned in a comment on task: ${taskData.title}`,
+                  content: notificationContent,
                   link: `/projects/${taskData.project_id}?task=${taskId}`,
                   metadata: {
                     comment_id: comment.id,
@@ -354,10 +486,10 @@ export const useTaskStore = create<TaskState>((set, get) => ({
                   },
                   read: false,
                   created_by: currentUserId,
-                }
+                },
               ])
               .select();
-              
+  
             if (notifError) {
               console.error(`Error creating notification for user ${mentionedUser}:`, notifError);
             } else {
@@ -366,7 +498,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
           }
         }
       }
-      
+  
       return comment;
     } catch (error: any) {
       console.error('Failed to add comment:', error);
@@ -374,15 +506,31 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       throw error;
     }
   },
-  
-
-
 
   updateComment: async (commentId, content) => {
     try {
+      // Get the current authenticated user
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError) throw authError || new Error('User not authenticated');
+
+      const currentUserId = user.id;
+
+      // Fetch the comment to check who created it
+      const { data: comment, error: fetchError } = await supabase
+        .from('task_comments')
+        .select('created_by')
+        .eq('id', commentId)
+        .single();
+
+      if (fetchError) throw fetchError;
+      if (!comment || comment.created_by !== currentUserId) {
+        throw new Error('You are not authorized to edit this comment');
+      }
+
+      // Update the comment if authorized
       const { error } = await supabase
         .from('task_comments')
-        .update({ content })
+        .update({ content, updated_at: new Date().toISOString() })
         .eq('id', commentId);
 
       if (error) throw error;
@@ -395,6 +543,25 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
   deleteComment: async (commentId) => {
     try {
+      // Get the current authenticated user
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError) throw authError || new Error('User not authenticated');
+
+      const currentUserId = user.id;
+
+      // Fetch the comment to check who created it
+      const { data: comment, error: fetchError } = await supabase
+        .from('task_comments')
+        .select('created_by')
+        .eq('id', commentId)
+        .single();
+
+      if (fetchError) throw fetchError;
+      if (!comment || comment.created_by !== currentUserId) {
+        throw new Error('You are not authorized to delete this comment');
+      }
+
+      // Delete the comment if authorized
       const { error } = await supabase
         .from('task_comments')
         .delete()
@@ -406,5 +573,5 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       set({ error: error.message });
       throw error;
     }
-  }
+  },
 }));
