@@ -21,7 +21,7 @@ export const CommentList: React.FC<CommentListProps> = ({ taskId, comments, onUp
   const [mentionedUserIds, setMentionedUserIds] = useState<string[]>([]);
   const [editingComment, setEditingComment] = useState<string | null>(null);
   const [editedContent, setEditedContent] = useState('');
-  const [errorMessage, setErrorMessage] = useState<string | null>(null); // Add error state for UI feedback
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { addComment, deleteComment, updateComment } = useTaskStore();
@@ -29,6 +29,14 @@ export const CommentList: React.FC<CommentListProps> = ({ taskId, comments, onUp
   const { users } = useUserStore();
   const { user } = useAuthStore();
   const currentUserId = user?.id;
+
+  // Debug logs to verify user and comment data
+  useEffect(() => {
+    console.log('Current User ID:', currentUserId);
+    comments.forEach((comment) =>
+      console.log(`Comment ${comment.id} created by:`, comment.created_by)
+    );
+  }, [currentUserId, comments]);
 
   const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,7 +47,7 @@ export const CommentList: React.FC<CommentListProps> = ({ taskId, comments, onUp
       await addComment(taskId, newComment.trim(), mentionedUserIds);
       setNewComment('');
       setMentionedUserIds([]);
-      setErrorMessage(null); // Clear any previous errors
+      setErrorMessage(null);
       onUpdate();
     } catch (error: any) {
       console.error('Failed to add comment:', error);
@@ -111,7 +119,6 @@ export const CommentList: React.FC<CommentListProps> = ({ taskId, comments, onUp
 
   return (
     <div className="space-y-4">
-      {/* Display error message if it exists */}
       {errorMessage && (
         <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
           <span>{errorMessage}</span>
@@ -124,7 +131,6 @@ export const CommentList: React.FC<CommentListProps> = ({ taskId, comments, onUp
         </div>
       )}
 
-      {/* Existing comments */}
       {comments.map((comment) => (
         <div key={comment.id} className="bg-gray-50 rounded-lg p-3 space-y-1 group">
           <div className="flex items-center justify-between">
@@ -135,7 +141,8 @@ export const CommentList: React.FC<CommentListProps> = ({ taskId, comments, onUp
               <span className="text-xs text-gray-500">
                 {format(new Date(comment.created_at), 'MMM d, yyyy h:mm a')}
               </span>
-              {currentUserId === comment.created_by && (
+              {/* Enhanced condition to handle undefined cases */}
+              {(currentUserId && comment.created_by && currentUserId === comment.created_by) && (
                 <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center space-x-1">
                   <button
                     onClick={() => {
@@ -193,10 +200,8 @@ export const CommentList: React.FC<CommentListProps> = ({ taskId, comments, onUp
         </div>
       ))}
 
-      {/* Attachments */}
       <AttachmentList attachments={attachments} onDelete={handleDeleteAttachment} />
 
-      {/* Comment form */}
       <form onSubmit={handleAddComment} className="space-y-4">
         <div className="space-y-2">
           <MentionsInput
