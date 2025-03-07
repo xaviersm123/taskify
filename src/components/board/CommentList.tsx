@@ -5,10 +5,10 @@ import { Trash2, Upload, Edit2, Check, X } from 'lucide-react';
 import { useTaskStore, TaskComment } from '../../lib/store/task';
 import { useAttachmentStore } from '../../lib/store/attachment/store';
 import { useUserStore } from '../../lib/store/user';
-import { useAuthStore } from '../../lib/store/auth'; // Import useAuthStore to get current user
+import { useAuthStore } from '../../lib/store/auth';
 import { AttachmentList } from './AttachmentList';
 import { formatUserDisplay } from '../../lib/utils/user-display';
-import { MentionsInput } from './MentionsInput'; // Import the MentionsInput component
+import { MentionsInput } from './MentionsInput';
 
 interface CommentListProps {
   taskId: string;
@@ -17,65 +17,64 @@ interface CommentListProps {
 }
 
 export const CommentList: React.FC<CommentListProps> = ({ taskId, comments, onUpdate }) => {
-  // State to store new comment text.
   const [newComment, setNewComment] = useState('');
-  // State to store an array of mentioned user IDs.
   const [mentionedUserIds, setMentionedUserIds] = useState<string[]>([]);
-  // State for comment editing.
   const [editingComment, setEditingComment] = useState<string | null>(null);
   const [editedContent, setEditedContent] = useState('');
-  // Ref for file input (attachments).
+  const [errorMessage, setErrorMessage] = useState<string | null>(null); // Add error state for UI feedback
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Get methods from our stores.
   const { addComment, deleteComment, updateComment } = useTaskStore();
   const { attachments, uploadAttachment, deleteAttachment, fetchAttachments } = useAttachmentStore();
   const { users } = useUserStore();
-  const { user } = useAuthStore(); // Get the current authenticated user
-  const currentUserId = user?.id; // Get the current user's ID
+  const { user } = useAuthStore();
+  const currentUserId = user?.id;
 
-  // Handler for adding a new comment.
   const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newComment.trim()) return;
 
     try {
       console.log('Adding comment with mentioned users:', mentionedUserIds);
-      // Call addComment and pass the mentionedUserIds array.
       await addComment(taskId, newComment.trim(), mentionedUserIds);
       setNewComment('');
       setMentionedUserIds([]);
+      setErrorMessage(null); // Clear any previous errors
       onUpdate();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to add comment:', error);
+      setErrorMessage(error.message || 'Failed to add comment');
     }
   };
 
-  // Handler for editing a comment.
   const handleEditComment = async (commentId: string) => {
     if (!editedContent.trim()) return;
     try {
+      console.log(`Attempting to edit comment ${commentId} by user ${currentUserId}`);
       await updateComment(commentId, editedContent.trim());
       setEditingComment(null);
       setEditedContent('');
+      setErrorMessage(null);
       onUpdate();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to update comment:', error);
+      setErrorMessage(error.message || 'Failed to update comment');
     }
   };
 
-  // Handler for deleting a comment.
   const handleDeleteComment = async (commentId: string) => {
     if (!window.confirm('Are you sure you want to delete this comment?')) return;
     try {
+      console.log(`Attempting to delete comment ${commentId} by user ${currentUserId}`);
       await deleteComment(commentId);
+      setErrorMessage(null);
       onUpdate();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to delete comment:', error);
+      setErrorMessage(error.message || 'Failed to delete comment');
     }
   };
 
-  // Handler for file upload.
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -83,9 +82,10 @@ export const CommentList: React.FC<CommentListProps> = ({ taskId, comments, onUp
     try {
       await uploadAttachment(taskId, file);
       await fetchAttachments(taskId);
-    } catch (error) {
+      setErrorMessage(null);
+    } catch (error: any) {
       console.error('Failed to upload file:', error);
-      alert(error instanceof Error ? error.message : 'Failed to upload file');
+      setErrorMessage(error.message || 'Failed to upload file');
     }
 
     if (fileInputRef.current) {
@@ -93,17 +93,17 @@ export const CommentList: React.FC<CommentListProps> = ({ taskId, comments, onUp
     }
   };
 
-  // Handler for deleting an attachment.
   const handleDeleteAttachment = async (attachmentId: string) => {
     if (!window.confirm('Are you sure you want to delete this attachment?')) return;
     try {
       await deleteAttachment(attachmentId);
-    } catch (error) {
+      setErrorMessage(null);
+    } catch (error: any) {
       console.error('Failed to delete attachment:', error);
+      setErrorMessage(error.message || 'Failed to delete attachment');
     }
   };
 
-  // Utility function to get the display name of a comment author.
   const getCommentAuthor = (userId: string) => {
     const user = users.find((u) => u.id === userId);
     return formatUserDisplay(user);
@@ -111,6 +111,19 @@ export const CommentList: React.FC<CommentListProps> = ({ taskId, comments, onUp
 
   return (
     <div className="space-y-4">
+      {/* Display error message if it exists */}
+      {errorMessage && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
+          <span>{errorMessage}</span>
+          <button
+            onClick={() => setErrorMessage(null)}
+            className="absolute top-0 right-0 px-4 py-3"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
       {/* Existing comments */}
       {comments.map((comment) => (
         <div key={comment.id} className="bg-gray-50 rounded-lg p-3 space-y-1 group">
@@ -122,7 +135,6 @@ export const CommentList: React.FC<CommentListProps> = ({ taskId, comments, onUp
               <span className="text-xs text-gray-500">
                 {format(new Date(comment.created_at), 'MMM d, yyyy h:mm a')}
               </span>
-              {/* Only show edit/delete icons if the current user created the comment */}
               {currentUserId === comment.created_by && (
                 <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center space-x-1">
                   <button
@@ -131,12 +143,14 @@ export const CommentList: React.FC<CommentListProps> = ({ taskId, comments, onUp
                       setEditedContent(comment.content);
                     }}
                     className="p-1 text-gray-400 hover:text-gray-500 rounded"
+                    title="Edit comment"
                   >
                     <Edit2 className="h-4 w-4" />
                   </button>
                   <button
                     onClick={() => handleDeleteComment(comment.id)}
                     className="p-1 text-red-400 hover:text-red-500 rounded"
+                    title="Delete comment"
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
@@ -157,6 +171,7 @@ export const CommentList: React.FC<CommentListProps> = ({ taskId, comments, onUp
                 <button
                   onClick={() => handleEditComment(comment.id)}
                   className="p-1 text-green-600 hover:text-green-700 rounded"
+                  title="Save changes"
                 >
                   <Check className="h-4 w-4" />
                 </button>
@@ -166,6 +181,7 @@ export const CommentList: React.FC<CommentListProps> = ({ taskId, comments, onUp
                     setEditedContent('');
                   }}
                   className="p-1 text-red-600 hover:text-red-700 rounded"
+                  title="Cancel"
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -183,7 +199,6 @@ export const CommentList: React.FC<CommentListProps> = ({ taskId, comments, onUp
       {/* Comment form */}
       <form onSubmit={handleAddComment} className="space-y-4">
         <div className="space-y-2">
-          {/* Use the MentionsInput component */}
           <MentionsInput
             value={newComment}
             onChange={setNewComment}
