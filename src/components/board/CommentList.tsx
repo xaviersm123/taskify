@@ -1,5 +1,5 @@
 // CommentList.tsx
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { format } from 'date-fns';
 import { Trash2, Upload, Edit2, Check, X } from 'lucide-react';
 import { useTaskStore, TaskComment } from '../../lib/store/task';
@@ -23,6 +23,8 @@ export const CommentList: React.FC<CommentListProps> = ({ taskId, comments, onUp
   const [editedContent, setEditedContent] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dropZoneRef = useRef<HTMLDivElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   const { addComment, deleteComment, updateComment } = useTaskStore();
   const { attachments, uploadAttachment, deleteAttachment, fetchAttachments } = useAttachmentStore();
@@ -37,6 +39,41 @@ export const CommentList: React.FC<CommentListProps> = ({ taskId, comments, onUp
       console.log(`Comment ${comment.id} created by:`, comment.created_by)
     );
   }, [currentUserId, comments]);
+
+  // Drag and Drop Handlers
+  useEffect(() => {
+    const dropZone = dropZoneRef.current;
+    if (!dropZone) return;
+
+    const handleDragOver = (e: DragEvent) => {
+      e.preventDefault();
+      setIsDragging(true);
+    };
+
+    const handleDragLeave = (e: DragEvent) => {
+      e.preventDefault();
+      setIsDragging(false);
+    };
+
+    const handleDrop = async (e: DragEvent) => {
+      e.preventDefault();
+      setIsDragging(false);
+      const files = e.dataTransfer?.files;
+      if (files && files.length > 0) {
+        await handleMultipleFileUpload([...files]);
+      }
+    };
+
+    dropZone.addEventListener('dragover', handleDragOver);
+    dropZone.addEventListener('dragleave', handleDragLeave);
+    dropZone.addEventListener('drop', handleDrop);
+
+    return () => {
+      dropZone.removeEventListener('dragover', handleDragOver);
+      dropZone.removeEventListener('dragleave', handleDragLeave);
+      dropZone.removeEventListener('drop', handleDrop);
+    };
+  }, [taskId]);
 
   const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -84,20 +121,24 @@ export const CommentList: React.FC<CommentListProps> = ({ taskId, comments, onUp
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      await handleMultipleFileUpload([...files]);
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
 
+  const handleMultipleFileUpload = async (files: File[]) => {
     try {
-      await uploadAttachment(taskId, file);
+      const uploadPromises = files.map(file => uploadAttachment(taskId, file));
+      const results = await Promise.all(uploadPromises);
       await fetchAttachments(taskId);
       setErrorMessage(null);
     } catch (error: any) {
-      console.error('Failed to upload file:', error);
-      setErrorMessage(error.message || 'Failed to upload file');
-    }
-
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+      console.error('Failed to upload files:', error);
+      setErrorMessage(error.message || 'Failed to upload one or more files');
     }
   };
 
@@ -141,7 +182,6 @@ export const CommentList: React.FC<CommentListProps> = ({ taskId, comments, onUp
               <span className="text-xs text-gray-500">
                 {format(new Date(comment.created_at), 'MMM d, yyyy h:mm a')}
               </span>
-              {/* Enhanced condition to handle undefined cases */}
               {(currentUserId && comment.created_by && currentUserId === comment.created_by) && (
                 <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center space-x-1">
                   <button
@@ -216,32 +256,49 @@ export const CommentList: React.FC<CommentListProps> = ({ taskId, comments, onUp
           />
         </div>
 
-        <div className="flex justify-between items-center">
-          <div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              onChange={handleFileUpload}
-              className="hidden"
-              accept="image/*,.pdf,.doc,.docx,.txt"
-            />
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-            >
-              <Upload className="h-4 w-4 mr-2" />
-              Attach file
-            </button>
-            <span className="ml-2 text-xs text-gray-500">Max size: 15MB</span>
-          </div>
-          <button
-            type="submit"
-            disabled={!newComment.trim()}
-            className="inline-flex justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+        <div className="space-y-4">
+          {/* Drag and Drop Zone */}
+          <div
+            ref={dropZoneRef}
+            className={`border-2 border-dashed rounded-lg p-4 text-center ${
+              isDragging ? 'border-indigo-500 bg-indigo-50' : 'border-gray-300'
+            }`}
           >
-            Comment
-          </button>
+            <p className="text-sm text-gray-600">
+              Drag and drop files here, or click to select files
+            </p>
+            <p className="text-xs text-gray-500">Max size: 15MB per file</p>
+          </div>
+
+          {/* File Input and Button */}
+          <div className="flex justify-between items-center">
+            <div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple // Enable multiple file selection
+                onChange={handleFileUpload}
+                className="hidden"
+                accept="image/*,.pdf,.doc,.docx,.txt"
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+              >
+                <Upload className="h-4 w-4 mr-2" />
+                Attach files
+              </button>
+              <span className="ml-2 text-xs text-gray-500">Max size: 15MB</span>
+            </div>
+            <button
+              type="submit"
+              disabled={!newComment.trim()}
+              className="inline-flex justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+            >
+              Comment
+            </button>
+          </div>
         </div>
       </form>
     </div>

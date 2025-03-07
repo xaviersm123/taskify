@@ -1,17 +1,18 @@
+// attachment/store.ts
 import { create } from 'zustand';
 import { supabase } from '../../supabase/client';
 import { AttachmentState, Attachment } from './types';
 
 const MAX_FILE_SIZE = 15 * 1024 * 1024; // 15MB
 
-export const useAttachmentStore = create<AttachmentState>((set) => ({
+export const useAttachmentStore = create<AttachmentState>((set, get) => ({
   attachments: [],
   loading: false,
   error: null,
 
   uploadAttachment: async (ticketId: string, file: File) => {
     if (file.size > MAX_FILE_SIZE) {
-      throw new Error('File size exceeds 15MB limit');
+      throw new Error(`File ${file.name} exceeds 15MB limit`);
     }
 
     try {
@@ -45,9 +46,9 @@ export const useAttachmentStore = create<AttachmentState>((set) => ({
 
       if (error) throw error;
 
-      set(state => ({
+      set((state) => ({
         attachments: [...state.attachments, data],
-        error: null
+        error: null,
       }));
 
       return data;
@@ -79,9 +80,9 @@ export const useAttachmentStore = create<AttachmentState>((set) => ({
 
       if (error) throw error;
 
-      set(state => ({
-        attachments: state.attachments.filter(a => a.id !== id),
-        error: null
+      set((state) => ({
+        attachments: state.attachments.filter((a) => a.id !== id),
+        error: null,
       }));
     } catch (error: any) {
       set({ error: error.message });
@@ -103,6 +104,18 @@ export const useAttachmentStore = create<AttachmentState>((set) => ({
       set({ attachments: data || [], loading: false, error: null });
     } catch (error: any) {
       set({ error: error.message, loading: false });
+      throw error;
+    }
+  },
+
+  // Optional: Add a batch upload method if needed
+  uploadMultipleAttachments: async (ticketId: string, files: File[]) => {
+    const uploadPromises = files.map((file) => get().uploadAttachment(ticketId, file));
+    try {
+      await Promise.all(uploadPromises);
+      await get().fetchAttachments(ticketId);
+    } catch (error: any) {
+      set({ error: error.message || 'Failed to upload one or more files' });
       throw error;
     }
   },
