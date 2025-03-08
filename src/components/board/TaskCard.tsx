@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Calendar, User, Circle, CheckCircle } from 'lucide-react';
+import { Calendar, User, Circle, CheckCircle, GripVertical } from 'lucide-react';
 import { format } from 'date-fns';
 import { Task } from '../../lib/store/task/types';
 import { useUserStore } from '../../lib/store/user';
@@ -38,11 +38,6 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, columnId, isSelected }
     transition,
   };
 
-  const handleContextMenu = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsDetailsOpen(true);
-  }, []);
-
   const handleCheckClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
   }, []);
@@ -65,15 +60,15 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, columnId, isSelected }
         ref={setNodeRef}
         style={style}
         {...attributes}
-        {...listeners}
         data-task-id={task.id}
-        onClick={() => setIsDetailsOpen(true)}
-        onContextMenu={handleContextMenu}
-        className={`bg-white p-3 rounded shadow-sm border border-gray-200 cursor-pointer hover:shadow-md space-y-2 transition-shadow duration-200 ${
+        className={`bg-white p-3 rounded shadow-sm border border-gray-200 hover:shadow-md space-y-2 transition-shadow duration-200 ${
           isSelected ? 'ring-2 ring-indigo-500' : ''
         }`}
       >
         <div className="flex items-start space-x-2">
+          <div {...listeners} className="cursor-grab flex-shrink-0 mt-0.5">
+            <GripVertical className="h-4 w-4 text-gray-400" />
+          </div>
           <button
             onClick={handleCheckClick}
             className="flex-shrink-0 mt-0.5 text-gray-400 hover:text-gray-500 focus:outline-none"
@@ -84,16 +79,15 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, columnId, isSelected }
               <Circle className="h-4 w-4" />
             )}
           </button>
-
           <div className="flex-1 min-w-0">
             <h4
-              className={`text-sm font-medium ${
+              onClick={() => setIsDetailsOpen(true)}
+              className={`text-sm font-medium cursor-pointer hover:underline ${
                 task.status === 'complete' ? 'text-gray-400 line-through' : 'text-gray-900'
               }`}
             >
               {truncateTitle(task.title)}
             </h4>
-
             <div className="flex items-center justify-between text-xs text-gray-500 mt-2">
               <div className="flex items-center space-x-2">
                 {assigneeName !== 'Unassigned' && (
@@ -125,7 +119,6 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, columnId, isSelected }
                 </span>
               )}
             </div>
-
             {/* Custom Fields Section */}
             <div className="mt-2 space-y-1">
               {task.customFields?.map((field) => (
@@ -138,7 +131,6 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, columnId, isSelected }
           </div>
         </div>
       </div>
-
       <TaskDetails
         taskId={task.id}
         isOpen={isDetailsOpen}
