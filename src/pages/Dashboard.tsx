@@ -64,9 +64,9 @@ export const Dashboard = () => {
     }
   }, [projects, fetchMembers]);
 
-  // Render the dashboard layout with a vertical scrollbar
+  // Render the dashboard layout
   return (
-    <div className="p-6 h-screen overflow-y-auto">
+    <div className="p-6 flex-1 min-h-0">
       <div className="mb-8">
         {/* Greeting message with user's first name and current date */}
         <h1 className="text-2xl font-bold text-gray-900">

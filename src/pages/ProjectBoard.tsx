@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ProjectHeader } from '../components/projects/ProjectHeader';
 import { BoardHeader } from '../components/board/BoardHeader';
 import { BoardView } from '../components/board/BoardView';
+import { BoardContainer } from '../components/board/BoardContainer';
 import { useParams, useNavigate } from 'react-router-dom';
 import { TaskFilter } from '../components/board/BoardFilters';
 import { ensureCompleteUUID } from '../lib/utils/uuid';
@@ -37,9 +38,6 @@ export const ProjectBoard = () => {
     return null;
   }
 
-  // Debug store functions
-  console.log('fetchProjectById:', fetchProjectById);
-
   // Fetch data when projectId changes
   useEffect(() => {
     const fetchData = async () => {
@@ -72,8 +70,20 @@ export const ProjectBoard = () => {
           onFilterChange={setFilters}
         />
       </div>
-      <div className="flex-1 min-h-0 overflow-x-auto">
-        <BoardView projectId={validProjectId} filters={filters} />
+      <div className="flex-1 min-h-0 overflow-x-auto"> {/* Ensure horizontal scrolling */}
+        <BoardContainer>
+          <BoardView projectId={validProjectId} filters={filters} />
+          <div className="p-4">
+            <button
+              className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
+              onClick={() => {
+                console.log('Add task clicked');
+              }}
+            >
+              + Add task
+            </button>
+          </div>
+        </BoardContainer>
       </div>
     </div>
   );

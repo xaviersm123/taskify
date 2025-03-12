@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Menu, Search, Bell, Settings, LogOut } from 'lucide-react';
 import { useAuthStore } from '../../lib/store/auth';
 import { useTaskStore } from '../../lib/store/task';
-import { useNotificationStore } from '../../lib/store/notification'; // Import the notification store
+import { useNotificationStore } from '../../lib/store/notification';
 import { SearchResults } from '../search/SearchResults';
 import { searchTasksAndSubtasks, SearchResult } from '../../lib/utils/search';
 import { useTaskSelection } from '../../hooks/useTaskSelection';
@@ -11,13 +11,13 @@ import { useDebounce } from 'use-debounce';
 
 interface TopBarProps {
   onToggleSidebar: () => void;
-  isSidebarCollapsed: boolean; // Optional: Remove if not used
+  isSidebarCollapsed: boolean;
 }
 
-export const TopBar: React.FC<TopBarProps> = ({ onToggleSidebar }) => {
+export const TopBar: React.FC<TopBarProps> = ({ onToggleSidebar, isSidebarCollapsed }) => {
   const { user, signOut } = useAuthStore();
   const { tasks, subtasks } = useTaskStore();
-  const { unreadCount } = useNotificationStore(); // Destructure unreadCount from the notification store
+  const { unreadCount } = useNotificationStore();
   const { selectTask } = useTaskSelection();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
@@ -83,39 +83,35 @@ export const TopBar: React.FC<TopBarProps> = ({ onToggleSidebar }) => {
   };
 
   return (
-    <header className="bg-white border-b border-gray-200">
+    <header className="bg-gray-900 text-white border-b border-gray-700">
       <div className="px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between h-16">
-          {/* Left Section: Sidebar Toggle and Search Bar */}
-          <div className="flex-1 flex items-center">
-            {/* Sidebar Toggle Button */}
+        <div className="flex items-center justify-between h-16">
+          {/* Left Section: Sidebar Toggle and App Name */}
+          <div className="flex items-center">
             <button
               onClick={onToggleSidebar}
-              className="p-2 rounded-lg hover:bg-gray-100 transition-colors duration-200"
+              className="p-2 rounded-lg hover:bg-gray-800 transition-colors duration-200"
               aria-label="Toggle sidebar"
             >
-              <Menu className="h-5 w-5 text-gray-600" />
+              <Menu className="h-5 w-5 text-gray-300" />
             </button>
+            <span className="text-xl font-bold ml-2">Taskify</span>
+          </div>
 
-            {/* App Name */}
-            <span className="text-xl font-bold ml-3">Taskify</span>
-
-            {/* Search Bar */}
-            <div className="max-w-2xl w-full lg:max-w-xs ml-8 relative">
+          {/* Center Section: Search Bar */}
+          <div className="flex-1 flex justify-center">
+            <div className="max-w-xl w-full lg:max-w-2xl relative">
               <label htmlFor="search" className="sr-only">
                 Search
               </label>
               <div className="relative text-gray-400 focus-within:text-gray-600">
-                {/* Search Icon */}
                 <div className="pointer-events-none absolute inset-y-0 left-0 pl-3 flex items-center">
                   <Search className="h-5 w-5 text-gray-400" />
                 </div>
-
-                {/* Search Input */}
                 <input
                   id="search"
-                  className="block w-full bg-white py-2 pl-10 pr-3 border border-gray-300 rounded-lg leading-5 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition-all"
-                  style={{ paddingLeft: '2.5rem' }} // Add this line to enforce padding
+                  className="block w-full bg-gray-800 py-2 pl-10 pr-3 border border-gray-700 rounded-lg leading-5 text-gray-300 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition-all"
+                  style={{ paddingLeft: '2.5rem' }}
                   placeholder="Search tasks..."
                   type="search"
                   value={searchQuery}
@@ -124,8 +120,6 @@ export const TopBar: React.FC<TopBarProps> = ({ onToggleSidebar }) => {
                   autoComplete="off"
                 />
               </div>
-
-              {/* Search Results Dropdown */}
               {isSearching && (
                 <SearchResults
                   results={searchResults}
@@ -141,8 +135,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onToggleSidebar }) => {
 
           {/* Right Section: Notifications and Profile Menu */}
           <div className="flex items-center space-x-4">
-            {/* Notifications Button */}
-            <button className="relative p-1 text-gray-400 hover:text-gray-500" aria-label="Notifications">
+            <button className="relative p-1 text-gray-400 hover:text-gray-300" aria-label="Notifications">
               <Bell className="h-6 w-6" />
               {unreadCount > 0 && (
                 <span className="absolute top-0 right-0 inline-flex items-center justify-center h-4 w-4 rounded-full bg-red-500 text-white text-xs font-bold">
@@ -150,47 +143,36 @@ export const TopBar: React.FC<TopBarProps> = ({ onToggleSidebar }) => {
                 </span>
               )}
             </button>
-
-            {/* Profile Menu */}
             <div className="relative profile-menu">
-              {/* Profile Button */}
               <button
                 onClick={() => setShowProfileMenu(!showProfileMenu)}
-                className="flex items-center space-x-2 p-2 rounded-lg hover:bg-gray-100 transition-colors duration-200"
+                className="flex items-center space-x-2 p-2 rounded-lg hover:bg-gray-800 transition-colors duration-200"
                 aria-label="Open profile menu"
               >
-                {/* Profile Icon */}
-                <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center">
-                  <span className="text-sm font-medium text-indigo-600">
+                <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center">
+                  <span className="text-sm font-medium text-white">
                     {user?.user_metadata?.firstName?.[0].toUpperCase()}
                   </span>
                 </div>
-
-                {/* Username */}
-                <span className="text-sm font-medium text-gray-700">
+                <span className="text-sm font-medium text-gray-300">
                   {user?.user_metadata?.firstName.split('@')[0]}
                 </span>
               </button>
-
-              {/* Profile Dropdown Menu */}
               {showProfileMenu && (
-                <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-50">
-                  {/* Profile Settings */}
+                <div className="absolute right-0 mt-2 w-48 bg-gray-800 rounded-md shadow-lg py-1 z-50">
                   <button
                     onClick={() => {
                       navigate('/profile');
                       setShowProfileMenu(false);
                     }}
-                    className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                    className="flex items-center w-full px-4 py-2 text-sm text-gray-300 hover:bg-gray-700"
                   >
                     <Settings className="h-4 w-4 mr-2" />
                     Profile Settings
                   </button>
-
-                  {/* Sign Out */}
                   <button
                     onClick={handleLogout}
-                    className="flex items-center w-full px-4 py-2 text-sm text-red-600 hover:bg-gray-100"
+                    className="flex items-center w-full px-4 py-2 text-sm text-red-400 hover:bg-gray-700"
                   >
                     <LogOut className="h-4 w-4 mr-2" />
                     Sign Out

@@ -6,27 +6,19 @@ import { TaskListHeader } from './TaskListHeader';
 import { TaskListFilters } from './TaskListFilters';
 import { TaskItem } from './TaskItem';
 
-// Define the TaskList component
-export const TaskList = () => {
-  // Destructure user from the authentication store
+export const TaskList = ({ currentUserId }) => {
   const { user } = useAuthStore();
-  // Destructure tasks, loading state, and fetchAssignedTasks function from the task store
   const { tasks, loading, fetchAssignedTasks } = useTaskStore();
-  // State to track the current filter
   const [filter, setFilter] = useState<'upcoming' | 'overdue' | 'completed'>('upcoming');
+  const [visibleTasks, setVisibleTasks] = useState(6); // Default number of visible tasks
 
-  // useEffect hook to fetch assigned tasks when the user ID changes
   useEffect(() => {
-    if (user?.id) {
-      fetchAssignedTasks(user.id);
-    }
+    if (user?.id) fetchAssignedTasks(user.id);
   }, [user?.id, fetchAssignedTasks]);
 
-  // Filter tasks based on the current filter
   const filteredTasks = tasks.filter(task => {
     const dueDate = task.due_date ? new Date(task.due_date) : null;
     const today = new Date();
-    
     switch (filter) {
       case 'overdue':
         return dueDate && dueDate < today && task.status !== 'complete';
@@ -38,10 +30,9 @@ export const TaskList = () => {
     }
   });
 
-  // Show loading state if tasks are being fetched
   if (loading) {
     return (
-      <div className="bg-white rounded-lg shadow animate-pulse p-6">
+      <div className="bg-white rounded-lg shadow p-4 animate-pulse">
         <div className="h-4 bg-gray-200 rounded w-1/4 mb-4"></div>
         <div className="space-y-3">
           {[1, 2, 3].map(i => (
@@ -52,12 +43,15 @@ export const TaskList = () => {
     );
   }
 
-  // Render the task list
+  const handleShowMore = () => {
+    setVisibleTasks(prev => prev + 5); // Increase visible tasks by 5
+  };
+
   return (
     <div className="bg-white rounded-lg shadow">
       <TaskListHeader />
-      <TaskListFilters 
-        activeFilter={filter} 
+      <TaskListFilters
+        activeFilter={filter}
         onFilterChange={setFilter}
         counts={{
           upcoming: tasks.filter(t => {
@@ -71,20 +65,23 @@ export const TaskList = () => {
           completed: tasks.filter(t => t.status === 'complete').length
         }}
       />
-      
       <div className="divide-y divide-gray-100">
-        {/* Render each task item */}
-        {filteredTasks.map(task => (
-          <TaskItem
-            key={task.id}
-            task={task}
-          />
-        ))}
-        
-        {/* Show message if no tasks match the current filter */}
-        {filteredTasks.length === 0 && (
-          <div className="p-4 text-center text-gray-500">
-            No {filter} tasks
+        <div className="max-h-96 overflow-y-auto"> {/* Fixed height with vertical scrollbar */}
+          {filteredTasks.slice(0, visibleTasks).map(task => (
+            <TaskItem key={task.id} task={task} />
+          ))}
+          {filteredTasks.length === 0 && (
+            <div className="p-4 text-center text-gray-500">No {filter} tasks</div>
+          )}
+        </div>
+        {visibleTasks < filteredTasks.length && (
+          <div className="p-4 text-center">
+            <button
+              onClick={handleShowMore}
+              className="text-indigo-600 hover:text-indigo-800 font-medium"
+            >
+              Show more
+            </button>
           </div>
         )}
       </div>

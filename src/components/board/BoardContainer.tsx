@@ -40,7 +40,7 @@ export const BoardContainer: React.FC<BoardContainerProps> = ({ children }) => {
   };
 
   return (
-    <div className="relative flex-1 overflow-auto">
+    <div className="relative flex-1 min-h-0"> {/* Removed overflow-auto to avoid conflict */}
       {showLeft && (
         <button
           onClick={() => handleScroll('left')}
@@ -63,10 +63,10 @@ export const BoardContainer: React.FC<BoardContainerProps> = ({ children }) => {
 
       <div
         ref={containerRef}
-        className="h-full overflow-x-auto hide-scrollbar"
+        className="h-full overflow-x-auto hide-scrollbar" // Ensure horizontal scrolling
         onScroll={checkScroll}
       >
-        <div className="inline-flex gap-4 p-6 h-full min-w-full">
+        <div className="inline-flex gap-4 p-6 h-full min-w-max"> {/* Changed min-w-full to min-w-max to allow content to exceed container width */}
           {children}
         </div>
       </div>
