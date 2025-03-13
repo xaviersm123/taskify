@@ -24,7 +24,6 @@ export const ProjectBoard = () => {
     dueNextWeek: false,
   });
 
-  // Handle invalid UUIDs
   let validProjectId: string;
   try {
     validProjectId = projectId ? ensureCompleteUUID(projectId) : '';
@@ -38,7 +37,6 @@ export const ProjectBoard = () => {
     return null;
   }
 
-  // Fetch data when projectId changes
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -70,10 +68,10 @@ export const ProjectBoard = () => {
           onFilterChange={setFilters}
         />
       </div>
-      <div className="flex-1 min-h-0 overflow-x-auto"> {/* Ensure horizontal scrolling */}
+      <div className="flex-1 min-h-0 w-full">
         <BoardContainer>
           <BoardView projectId={validProjectId} filters={filters} />
-          <div className="p-4">
+          <div className="p-4 shrink-0">
             <button
               className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
               onClick={() => {

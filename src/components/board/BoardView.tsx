@@ -26,25 +26,19 @@ export const BoardView: React.FC<BoardViewProps> = ({ projectId, filters }) => {
   const { user } = useAuthStore();
   const { tasks, fetchTasks, updateTask, selectedTaskId, setSelectedTaskId } = useTaskStore();
   const { columns, fetchColumns } = useBoardStore();
-  
+
   const { activeTask, handleDragStart, handleDragEnd } = useBoardDragAndDrop({
     tasks,
     columns,
-    updateTask
+    updateTask,
   });
 
-  const sensors = useSensors(
-    useSensor(PointerSensor),
-    useSensor(KeyboardSensor)
-  );
+  const sensors = useSensors(useSensor(PointerSensor), useSensor(KeyboardSensor));
 
   useEffect(() => {
     const loadData = async () => {
       try {
-        await Promise.all([
-          fetchTasks(projectId),
-          fetchColumns(projectId)
-        ]);
+        await Promise.all([fetchTasks(projectId), fetchColumns(projectId)]);
       } catch (error) {
         console.error('Failed to load board data:', error);
       }
@@ -63,14 +57,14 @@ export const BoardView: React.FC<BoardViewProps> = ({ projectId, filters }) => {
   }, [selectedTaskId, setSelectedTaskId]);
 
   return (
-    <div className="h-full relative">
+    <div className="h-full w-full relative">
       <DndContext
         sensors={sensors}
         collisionDetection={closestCorners}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
-        <ScrollableColumns 
+        <ScrollableColumns
           columns={columns}
           tasks={filteredTasks}
           projectId={projectId}

@@ -27,7 +27,6 @@ export const Column: React.FC<ColumnProps> = ({
   totalColumns,
   position,
 }) => {
-  // Make the column sortable
   const {
     attributes,
     listeners,
@@ -40,7 +39,6 @@ export const Column: React.FC<ColumnProps> = ({
     data: { type: 'column', columnId: id },
   });
 
-  // Keep droppable functionality for tasks
   const { setNodeRef: setDroppableRef } = useDroppable({
     id,
     data: { type: 'column', columnId: id, accepts: ['task'] },
@@ -57,7 +55,7 @@ export const Column: React.FC<ColumnProps> = ({
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.5 : 1, // Visual feedback during drag
+    opacity: isDragging ? 0.5 : 1,
   };
 
   const handleSave = async () => {
@@ -104,13 +102,13 @@ export const Column: React.FC<ColumnProps> = ({
 
   return (
     <div
-      ref={setNodeRef} // Sortable ref for the entire column
+      ref={setNodeRef}
       style={style}
-      className="flex-shrink-0 w-[320px] bg-gray-50 rounded-lg flex flex-col max-h-full"
+      className="flex-shrink-0 w-[320px] bg-gray-50 rounded-lg flex flex-col h-full"
     >
       <div
-        className="p-3 flex items-center justify-between border-b border-gray-200 cursor-grab"
-        {...listeners} // Drag handle on the header
+        className="p-3 flex items-center justify-between border-b border-gray-200 cursor-grab shrink-0"
+        {...listeners}
         {...attributes}
         onContextMenu={handleContextMenu}
       >
@@ -168,15 +166,17 @@ export const Column: React.FC<ColumnProps> = ({
       </div>
 
       <div
-        ref={setDroppableRef} // Droppable ref for task dropping
-        className="flex-1 p-2 space-y-2 overflow-y-auto min-h-[100px]"
+        ref={setDroppableRef}
+        className="flex-1 p-2 space-y-2 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 max-h-[calc(100vh-400px)]" // Added max-height
       >
         <SortableContext items={tasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
           {tasks.map(task => (
             <TaskCard key={task.id} task={task} columnId={id} />
           ))}
         </SortableContext>
+      </div>
 
+      <div className="p-2 shrink-0">
         <button
           onClick={() => setIsCreateDialogOpen(true)}
           className="w-full p-2 flex items-center justify-center text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors duration-200"

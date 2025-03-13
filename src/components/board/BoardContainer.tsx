@@ -9,7 +9,7 @@ export const BoardContainer: React.FC<BoardContainerProps> = ({ children }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [showLeft, setShowLeft] = useState(false);
   const [showRight, setShowRight] = useState(true);
-  
+
   const checkScroll = () => {
     if (!containerRef.current) return;
     const { scrollLeft, scrollWidth, clientWidth } = containerRef.current;
@@ -29,18 +29,19 @@ export const BoardContainer: React.FC<BoardContainerProps> = ({ children }) => {
   const handleScroll = (direction: 'left' | 'right') => {
     if (!containerRef.current) return;
     const scrollAmount = 320;
-    const newPosition = direction === 'left'
-      ? containerRef.current.scrollLeft - scrollAmount
-      : containerRef.current.scrollLeft + scrollAmount;
-    
+    const newPosition =
+      direction === 'left'
+        ? containerRef.current.scrollLeft - scrollAmount
+        : containerRef.current.scrollLeft + scrollAmount;
+
     containerRef.current.scrollTo({
       left: newPosition,
-      behavior: 'smooth'
+      behavior: 'smooth',
     });
   };
 
   return (
-    <div className="relative flex-1 min-h-0"> {/* Removed overflow-auto to avoid conflict */}
+    <div className="relative flex-1 min-h-0">
       {showLeft && (
         <button
           onClick={() => handleScroll('left')}
@@ -50,7 +51,7 @@ export const BoardContainer: React.FC<BoardContainerProps> = ({ children }) => {
           <ChevronLeft className="h-6 w-6 text-gray-600" />
         </button>
       )}
-      
+
       {showRight && (
         <button
           onClick={() => handleScroll('right')}
@@ -63,10 +64,10 @@ export const BoardContainer: React.FC<BoardContainerProps> = ({ children }) => {
 
       <div
         ref={containerRef}
-        className="h-full overflow-x-auto hide-scrollbar" // Ensure horizontal scrolling
+        className="h-full overflow-x-auto hide-scrollbar w-full" // Ensure width is constrained to container
         onScroll={checkScroll}
       >
-        <div className="inline-flex gap-4 p-6 h-full min-w-max"> {/* Changed min-w-full to min-w-max to allow content to exceed container width */}
+        <div className="flex gap-4 p-6 h-full w-max"> {/* Use w-max to allow content to grow but not shrink */}
           {children}
         </div>
       </div>

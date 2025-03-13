@@ -11,7 +11,7 @@ interface ScrollableColumnsProps {
   }>;
   tasks: Task[];
   projectId: string;
-  selectedTaskId?: string | null; // Optional prop from BoardView.tsx
+  selectedTaskId?: string | null;
 }
 
 export const ScrollableColumns: React.FC<ScrollableColumnsProps> = ({
@@ -23,24 +23,22 @@ export const ScrollableColumns: React.FC<ScrollableColumnsProps> = ({
   const sortedColumns = [...columns].sort((a, b) => a.position - b.position);
 
   return (
-    <div className="h-full px-6 py-4 min-w-full">
+    <div className="h-full flex"> {/* Ensure flex for horizontal layout */}
       <SortableContext
         items={sortedColumns.map(col => col.id)}
         strategy={horizontalListSortingStrategy}
       >
-        <div className="inline-flex gap-4 h-full">
-          {sortedColumns.map(column => (
-            <Column
-              key={column.id}
-              id={column.id}
-              title={column.name}
-              tasks={tasks.filter(task => task.column_id === column.id)}
-              projectId={projectId}
-              totalColumns={columns.length}
-              position={column.position}
-            />
-          ))}
-        </div>
+        {sortedColumns.map(column => (
+          <Column
+            key={column.id}
+            id={column.id}
+            title={column.name}
+            tasks={tasks.filter(task => task.column_id === column.id)}
+            projectId={projectId}
+            totalColumns={columns.length}
+            position={column.position}
+          />
+        ))}
       </SortableContext>
     </div>
   );
