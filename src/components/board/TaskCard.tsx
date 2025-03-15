@@ -5,6 +5,7 @@ import { Calendar, User, Circle, CheckCircle, GripVertical } from 'lucide-react'
 import { format } from 'date-fns';
 import { Task } from '../../lib/store/task/types';
 import { useUserStore } from '../../lib/store/user';
+import { useTaskStore } from '../../lib/store/task'; // Import useTaskStore
 import { TaskDetails } from './TaskDetails';
 import { formatUserDisplay } from '../../lib/utils/user-display';
 
@@ -17,6 +18,7 @@ interface TaskCardProps {
 export const TaskCard: React.FC<TaskCardProps> = ({ task, columnId, isSelected }) => {
   const [isDetailsOpen, setIsDetailsOpen] = useState(isSelected);
   const { users, fetchUsers } = useUserStore();
+  const { updateTask } = useTaskStore(); // Add updateTask from useTaskStore
 
   const {
     attributes,
@@ -38,9 +40,18 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, columnId, isSelected }
     transition,
   };
 
-  const handleCheckClick = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-  }, []);
+  const handleCheckClick = useCallback(
+    async (e: React.MouseEvent) => {
+      e.stopPropagation();
+      const newStatus = task.status === 'complete' ? 'todo' : 'complete';
+      try {
+        await updateTask(task.id, { status: newStatus });
+      } catch (error) {
+        console.error('Failed to update task status:', error);
+      }
+    },
+    [task.id, task.status, updateTask]
+  );
 
   useEffect(() => {
     fetchUsers();
@@ -72,6 +83,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, columnId, isSelected }
           <button
             onClick={handleCheckClick}
             className="flex-shrink-0 mt-0.5 text-gray-400 hover:text-gray-500 focus:outline-none"
+            aria-label={task.status === 'complete' ? 'Mark as incomplete' : 'Mark as complete'}
           >
             {task.status === 'complete' ? (
               <CheckCircle className="h-4 w-4 text-green-500" />
