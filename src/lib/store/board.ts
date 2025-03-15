@@ -83,9 +83,9 @@ export const useBoardStore = create<BoardState>((set) => ({
         .from('board_columns')
         .update(data)
         .eq('id', columnId);
-
+  
       if (error) throw error;
-
+  
       set(state => ({
         columns: state.columns.map(col => 
           col.id === columnId ? { ...col, ...data } : col

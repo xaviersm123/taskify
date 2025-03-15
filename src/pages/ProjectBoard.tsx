@@ -9,12 +9,25 @@ import { ensureCompleteUUID } from '../lib/utils/uuid';
 import { useProjectStore } from '../lib/store/project';
 import { useTaskStore } from '../lib/store/task';
 import { useProjectMemberStore } from '../lib/store/project-member';
+import {
+  DndContext,
+  closestCenter,
+  DragEndEvent,
+  DragStartEvent,
+  DragOverlay,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import { SortableContext, arrayMove } from '@dnd-kit/sortable';
+import { TaskCard } from '../components/board/TaskCard';
 
 export const ProjectBoard = () => {
   const { projectId } = useParams();
   const navigate = useNavigate();
   const { fetchProjectById } = useProjectStore();
-  const { fetchTasksByProjectId } = useTaskStore();
+  const { fetchTasks, updateTask, tasks, setSelectedTaskId } = useTaskStore();
   const { fetchMembers } = useProjectMemberStore();
   const [filters, setFilters] = useState<TaskFilter>({
     incomplete: false,
@@ -23,6 +36,9 @@ export const ProjectBoard = () => {
     dueThisWeek: false,
     dueNextWeek: false,
   });
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+
+  const sensors = useSensors(useSensor(PointerSensor), useSensor(KeyboardSensor));
 
   let validProjectId: string;
   try {
@@ -40,21 +56,99 @@ export const ProjectBoard = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        if (!fetchProjectById) {
-          throw new Error('fetchProjectById is not available in useProjectStore');
-        }
         await Promise.all([
           fetchProjectById(validProjectId),
-          fetchTasksByProjectId(validProjectId),
+          fetchTasks(validProjectId),
           fetchMembers(validProjectId),
         ]);
       } catch (error) {
         console.error('Error fetching project data:', error);
       }
     };
-
     fetchData();
-  }, [validProjectId, fetchProjectById, fetchTasksByProjectId, fetchMembers]);
+  }, [validProjectId, fetchProjectById, fetchTasks, fetchMembers]);
+
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveTaskId(event.active.id as string);
+  };
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    setActiveTaskId(null);
+    if (!over || active.id === over.id) return;
+
+    const activeTaskId = active.id as string;
+    const overTaskId = over.id as string;
+    const activeTask = tasks.find((task) => task.id === activeTaskId);
+    const overTask = tasks.find((task) => task.id === overTaskId);
+
+    if (!activeTask || !overTask) return;
+
+    const oldIndex = tasks.findIndex((task) => task.id === activeTaskId);
+    const newIndex = tasks.findIndex((task) => task.id === overTaskId);
+    let updatedTasks = arrayMove(tasks, oldIndex, newIndex);
+
+    if (activeTask.column_id === overTask.column_id) {
+      // Reorder within the same column
+      updatedTasks = updatedTasks.map((task) =>
+        task.column_id === activeTask.column_id
+          ? {
+              ...task,
+              position: updatedTasks
+                .filter((t) => t.column_id === activeTask.column_id)
+                .indexOf(task),
+            }
+          : task
+      );
+    } else {
+      // Move to a different column
+      updatedTasks = updatedTasks.map((task) => {
+        if (task.id === activeTaskId) {
+          return { ...task, column_id: overTask.column_id, position: newIndex };
+        }
+        if (task.column_id === activeTask.column_id) {
+          return {
+            ...task,
+            position: updatedTasks
+              .filter((t) => t.column_id === activeTask.column_id && t.id !== activeTaskId)
+              .indexOf(task),
+          };
+        }
+        if (task.column_id === overTask.column_id) {
+          const targetTasks = updatedTasks.filter((t) => t.column_id === overTask.column_id);
+          return { ...task, position: targetTasks.indexOf(task) };
+        }
+        return task;
+      });
+    }
+
+    // Batch update all affected tasks
+    const updates = updatedTasks
+      .filter((task) => {
+        const original = tasks.find((t) => t.id === task.id);
+        return (
+          original &&
+          (original.position !== task.position || original.column_id !== task.column_id)
+        );
+      })
+      .map((task) => updateTask(task.id, { column_id: task.column_id, position: task.position }));
+
+    try {
+      await Promise.all(updates);
+      // Sort tasks to match backend order
+      const sortedTasks = [...updatedTasks].sort((a, b) => {
+        if (a.column_id === b.column_id) return a.position - b.position;
+        return a.column_id.localeCompare(b.column_id);
+      });
+      setSelectedTaskId(null); // Force re-render by updating unrelated state
+      useTaskStore.setState({ tasks: sortedTasks }); // Directly update store state
+    } catch (error) {
+      console.error('Failed to update tasks:', error);
+      await fetchTasks(validProjectId); // Fallback to re-fetch
+    }
+  };
+
+  const activeTask = tasks.find((task) => task.id === activeTaskId);
 
   return (
     <div className="flex flex-col h-full min-w-0">
@@ -62,21 +156,27 @@ export const ProjectBoard = () => {
         <ProjectHeader />
       </div>
       <div className="flex-shrink-0 w-full sticky top-16 z-20 bg-white border-b">
-        <BoardHeader
-          projectId={validProjectId}
-          filters={filters}
-          onFilterChange={setFilters}
-        />
+        <BoardHeader projectId={validProjectId} filters={filters} onFilterChange={setFilters} />
       </div>
       <div className="flex-1 min-h-0 w-full">
         <BoardContainer>
-          <BoardView projectId={validProjectId} filters={filters} />
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext items={tasks.map((task) => task.id)}>
+              <BoardView projectId={validProjectId} filters={filters} />
+            </SortableContext>
+            <DragOverlay>
+              {activeTask ? <TaskCard task={activeTask} columnId={activeTask.column_id || ''} /> : null}
+            </DragOverlay>
+          </DndContext>
           <div className="p-4 shrink-0">
             <button
               className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
-              onClick={() => {
-                console.log('Add task clicked');
-              }}
+              onClick={() => console.log('Add task clicked')}
             >
               + Add task
             </button>

@@ -1,4 +1,3 @@
-// TaskDetails.tsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Calendar, User, Folder, AlertTriangle } from 'lucide-react';
@@ -69,8 +68,6 @@ export const TaskDetails: React.FC<TaskDetailsProps> = ({
       fetchProjects();
     }
   }, [isOpen, taskId, fetchUsers, fetchProjects]);
-
-  console.log('Custom Fields in TaskDetails:', task?.customFields);
 
   const handleMarkComplete = async () => {
     if (!task) return;
