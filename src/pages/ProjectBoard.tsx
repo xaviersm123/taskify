@@ -76,52 +76,79 @@ export const ProjectBoard = () => {
     const { active, over } = event;
     setActiveTaskId(null);
     if (!over || active.id === over.id) return;
-
+  
     const activeTaskId = active.id as string;
-    const overTaskId = over.id as string;
     const activeTask = tasks.find((task) => task.id === activeTaskId);
-    const overTask = tasks.find((task) => task.id === overTaskId);
-
-    if (!activeTask || !overTask) return;
-
+    if (!activeTask) return;
+  
+    let updatedTasks = [...tasks];
     const oldIndex = tasks.findIndex((task) => task.id === activeTaskId);
-    const newIndex = tasks.findIndex((task) => task.id === overTaskId);
-    let updatedTasks = arrayMove(tasks, oldIndex, newIndex);
-
-    if (activeTask.column_id === overTask.column_id) {
-      // Reorder within the same column
-      updatedTasks = updatedTasks.map((task) =>
-        task.column_id === activeTask.column_id
-          ? {
+  
+    // Check if dropping over a task
+    const overTask = tasks.find((task) => task.id === over.id);
+    if (overTask) {
+      // Existing logic for dropping over a task
+      const newIndex = tasks.findIndex((task) => task.id === over.id);
+      updatedTasks = arrayMove(tasks, oldIndex, newIndex);
+  
+      if (activeTask.column_id === overTask.column_id) {
+        // Reorder within the same column
+        updatedTasks = updatedTasks.map((task) =>
+          task.column_id === activeTask.column_id
+            ? {
+                ...task,
+                position: updatedTasks
+                  .filter((t) => t.column_id === activeTask.column_id)
+                  .indexOf(task),
+              }
+            : task
+        );
+      } else {
+        // Move to a different column with existing tasks
+        updatedTasks = updatedTasks.map((task) => {
+          if (task.id === activeTaskId) {
+            return { ...task, column_id: overTask.column_id, position: newIndex };
+          }
+          if (task.column_id === activeTask.column_id) {
+            return {
               ...task,
               position: updatedTasks
-                .filter((t) => t.column_id === activeTask.column_id)
+                .filter((t) => t.column_id === activeTask.column_id && t.id !== activeTaskId)
                 .indexOf(task),
-            }
-          : task
-      );
+            };
+          }
+          if (task.column_id === overTask.column_id) {
+            const targetTasks = updatedTasks.filter((t) => t.column_id === overTask.column_id);
+            return { ...task, position: targetTasks.indexOf(task) };
+          }
+          return task;
+        });
+      }
     } else {
-      // Move to a different column
-      updatedTasks = updatedTasks.map((task) => {
-        if (task.id === activeTaskId) {
-          return { ...task, column_id: overTask.column_id, position: newIndex };
-        }
-        if (task.column_id === activeTask.column_id) {
-          return {
-            ...task,
-            position: updatedTasks
-              .filter((t) => t.column_id === activeTask.column_id && t.id !== activeTaskId)
-              .indexOf(task),
-          };
-        }
-        if (task.column_id === overTask.column_id) {
-          const targetTasks = updatedTasks.filter((t) => t.column_id === overTask.column_id);
-          return { ...task, position: targetTasks.indexOf(task) };
-        }
-        return task;
-      });
+      // Dropping over an empty column (over.id is a column ID)
+      const targetColumnId = over.id as string;
+      // Verify it's a valid column ID (you might need to maintain a list of column IDs)
+      const columnExists = true; // Replace with actual check if you have column data available
+      if (columnExists) {
+        updatedTasks = updatedTasks.map((task) => {
+          if (task.id === activeTaskId) {
+            return { ...task, column_id: targetColumnId, position: 0 }; // New position is 0 in empty column
+          }
+          if (task.column_id === activeTask.column_id) {
+            return {
+              ...task,
+              position: updatedTasks
+                .filter((t) => t.column_id === activeTask.column_id && t.id !== activeTaskId)
+                .indexOf(task),
+            };
+          }
+          return task;
+        });
+      } else {
+        return; // Invalid drop target
+      }
     }
-
+  
     // Batch update all affected tasks
     const updates = updatedTasks
       .filter((task) => {
@@ -132,19 +159,18 @@ export const ProjectBoard = () => {
         );
       })
       .map((task) => updateTask(task.id, { column_id: task.column_id, position: task.position }));
-
+  
     try {
       await Promise.all(updates);
-      // Sort tasks to match backend order
       const sortedTasks = [...updatedTasks].sort((a, b) => {
         if (a.column_id === b.column_id) return a.position - b.position;
         return a.column_id.localeCompare(b.column_id);
       });
-      setSelectedTaskId(null); // Force re-render by updating unrelated state
-      useTaskStore.setState({ tasks: sortedTasks }); // Directly update store state
+      setSelectedTaskId(null);
+      useTaskStore.setState({ tasks: sortedTasks });
     } catch (error) {
       console.error('Failed to update tasks:', error);
-      await fetchTasks(validProjectId); // Fallback to re-fetch
+      await fetchTasks(validProjectId);
     }
   };
 
