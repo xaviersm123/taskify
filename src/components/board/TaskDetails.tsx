@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Calendar, User, Folder, AlertTriangle } from 'lucide-react';
-import { useTaskStore } from '../../lib/store/task';
-import { useUserStore } from '../../lib/store/user';
-import { useProjectStore } from '../../lib/store/project';
-import { useBoardStore } from '../../lib/store/board';
-import { SubtaskList } from './SubtaskList';
+import { Calendar, User, Folder, AlertTriangle, Edit2, Check, X } from 'lucide-react';
+import ReactLinkify from 'react-linkify'; // Import react-linkify
+import { useTaskStore, Task } from '../../lib/store/task';
+import { useUserStore, User as UserType } from '../../lib/store/user';
+import { useProjectStore, Project } from '../../lib/store/project';
+import { useBoardStore, Column } from '../../lib/store/board';
+import { SubtaskList, Subtask } from './SubtaskList';
 import { CommentList } from './CommentList';
 import { TaskDetailsHeader } from './TaskDetails/TaskDetailsHeader';
 import { useTaskUpdates } from '../../hooks/useTaskUpdates';
@@ -13,11 +14,18 @@ import { formatUserDisplay } from '../../lib/utils/user-display';
 import { UserAvatar } from '../common/UserAvatar';
 import { useAuthStore } from '../../lib/store/auth';
 import { ActivityLogList } from '../tasks/ActivityLogList';
+import { TaskComment } from '../../lib/store/task';
+import { TaskCustomField } from '../../lib/store/task'; // Assuming this type exists
 
 interface TaskDetailsProps {
   taskId: string;
   isOpen: boolean;
   onClose: () => void;
+}
+
+// Define a type for the task including custom fields
+interface TaskWithCustomFields extends Task {
+  customFields: TaskCustomField[];
 }
 
 export const TaskDetails: React.FC<TaskDetailsProps> = ({
@@ -26,11 +34,14 @@ export const TaskDetails: React.FC<TaskDetailsProps> = ({
   onClose,
 }) => {
   const navigate = useNavigate();
-  const [task, setTask] = useState<Task | null>(null);
+  const [task, setTask] = useState<TaskWithCustomFields | null>(null);
   const [subtasks, setSubtasks] = useState<Subtask[]>([]);
   const [comments, setComments] = useState<TaskComment[]>([]);
   const [loading, setLoading] = useState(true);
   const [showActivityLogs, setShowActivityLogs] = useState(false);
+  const [isEditingDescription, setIsEditingDescription] = useState(false);
+  const [editedDescription, setEditedDescription] = useState('');
+
   const { fetchTaskDetails, updateTask, deleteTask, updateTaskCustomField } = useTaskStore();
   const { users, fetchUsers } = useUserStore();
   const { projects, fetchProjects } = useProjectStore();
@@ -38,25 +49,30 @@ export const TaskDetails: React.FC<TaskDetailsProps> = ({
   const { user } = useAuthStore();
   const currentUserId = user?.id;
 
-  const loadTaskDetails = async () => {
+  const loadTaskDetails = useCallback(async () => {
+    if (!taskId) return;
     try {
       setLoading(true);
       const details = await fetchTaskDetails(taskId);
       console.log('Fetched task details:', details);
-      setTask({ ...details.task, customFields: details.customFields });
-      setSubtasks(details.subtasks);
-      setComments(details.comments);
-      console.log('Updated task state with customFields:', { ...details.task, customFields: details.customFields });
+      const taskData = { ...details.task, customFields: details.customFields || [] };
+      setTask(taskData);
+      setEditedDescription(taskData.description || ''); // Initialize editedDescription
+      setSubtasks(details.subtasks || []);
+      setComments(details.comments || []);
+      console.log('Updated task state with customFields:', taskData);
     } catch (error) {
       console.error('Failed to load task details:', error);
+      // Handle error state if needed
     } finally {
       setLoading(false);
     }
-  };
+  }, [taskId, fetchTaskDetails]);
+
 
   const { handleFieldUpdate } = useTaskUpdates({
     task,
-    setTask,
+    setTask: setTask as React.Dispatch<React.SetStateAction<Task | null>>, // Adjust type if necessary
     updateTask,
     onError: loadTaskDetails,
   });
@@ -64,10 +80,18 @@ export const TaskDetails: React.FC<TaskDetailsProps> = ({
   useEffect(() => {
     if (isOpen && taskId) {
       loadTaskDetails();
-      fetchUsers();
-      fetchProjects();
+      fetchUsers(); // Consider fetching only if users are not already loaded
+      fetchProjects(); // Consider fetching only if projects are not already loaded
+    } else {
+      // Reset state when closed or taskId changes
+      setTask(null);
+      setSubtasks([]);
+      setComments([]);
+      setLoading(true);
+      setIsEditingDescription(false);
+      setEditedDescription('');
     }
-  }, [isOpen, taskId, fetchUsers, fetchProjects]);
+  }, [isOpen, taskId, loadTaskDetails, fetchUsers, fetchProjects]);
 
   const handleMarkComplete = async () => {
     if (!task) return;
@@ -85,7 +109,7 @@ export const TaskDetails: React.FC<TaskDetailsProps> = ({
     try {
       await deleteTask(taskId);
       onClose();
-      navigate(-1);
+      navigate(-1); // Consider redirecting to a more stable location like the project board
     } catch (error) {
       console.error('Failed to delete task:', error);
     }
@@ -95,24 +119,59 @@ export const TaskDetails: React.FC<TaskDetailsProps> = ({
     if (!task) return;
     try {
       await updateTaskCustomField(taskId, fieldId, value);
-      await loadTaskDetails();
+      await loadTaskDetails(); // Reload to confirm change and get potential side-effects
     } catch (error) {
       console.error('Failed to update custom field:', error);
     }
   };
 
-  if (!isOpen || !task) return null;
+  // --- Description Edit Handlers ---
+  const handleSaveDescription = async () => {
+    if (!task || editedDescription === task.description) {
+      setIsEditingDescription(false);
+      return;
+    }
+    try {
+      await handleFieldUpdate({ description: editedDescription });
+      setIsEditingDescription(false);
+      // Optionally call loadTaskDetails() if handleFieldUpdate doesn't update local state sufficiently
+    } catch (error) {
+      console.error('Failed to save description:', error);
+      // Optionally show an error message to the user
+    }
+  };
 
-  const currentColumn = columns.find((col) => col.id === task.column_id);
-  const currentProject = projects.find((p) => p.id === task.project_id);
+  const handleCancelDescriptionEdit = () => {
+    if (!task) return;
+    setEditedDescription(task.description || '');
+    setIsEditingDescription(false);
+  };
+  // --- End Description Edit Handlers ---
+
+  // Link decorator for react-linkify
+  const linkDecorator = (href: string, text: string, key: number) => (
+    <a href={href} key={key} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+      {text}
+    </a>
+  );
+
+
+  if (!isOpen) return null; // Render nothing if not open
+
+  const currentProject = projects.find((p: Project) => p.id === task?.project_id);
+  const currentColumn = columns.find((col: Column) => col.id === task?.column_id);
 
   // Helper function to parse jsonb options safely
   const parseOptions = (options: any): string[] => {
     if (!options) return [];
     try {
-      return Array.isArray(options) ? options : JSON.parse(options);
+        if (typeof options === 'string') {
+             const parsed = JSON.parse(options);
+             return Array.isArray(parsed) ? parsed : [];
+        }
+        return Array.isArray(options) ? options : [];
     } catch (error) {
-      console.error('Failed to parse options:', error);
+      console.error('Failed to parse options:', options, error);
       return [];
     }
   };
@@ -122,7 +181,7 @@ export const TaskDetails: React.FC<TaskDetailsProps> = ({
       <div className="fixed inset-0 bg-black bg-opacity-30" onClick={onClose} />
 
       <div className="relative w-full max-w-2xl bg-white shadow-xl flex flex-col h-full">
-        {loading ? (
+        {loading || !task ? ( // Show loading indicator if loading or task is null
           <div className="flex-1 flex items-center justify-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
           </div>
@@ -140,8 +199,8 @@ export const TaskDetails: React.FC<TaskDetailsProps> = ({
             <div className="flex-1 overflow-y-auto">
               <div className="p-4 space-y-6">
                 {/* Assignee */}
-                <div className="flex items-center space-x-4">
-                  <div className="w-32 flex items-center space-x-2">
+                <div className="flex items-start space-x-4">
+                  <div className="w-32 flex items-center space-x-2 pt-1.5"> {/* Adjusted padding */}
                     <User className="h-4 w-4 text-gray-400" />
                     <span className="text-sm text-gray-500">Assignee</span>
                   </div>
@@ -154,10 +213,10 @@ export const TaskDetails: React.FC<TaskDetailsProps> = ({
                       onChange={(e) =>
                         handleFieldUpdate({ assignee_id: e.target.value || null })
                       }
-                      className="w-48 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                      className="w-48 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-1" // Adjusted padding
                     >
                       <option value="">Unassigned</option>
-                      {users.map((user) => (
+                      {users.map((user: UserType) => (
                         <option key={user.id} value={user.id}>
                           {formatUserDisplay(user)}
                         </option>
@@ -175,8 +234,8 @@ export const TaskDetails: React.FC<TaskDetailsProps> = ({
                   <input
                     type="date"
                     value={task.due_date?.split('T')[0] || ''}
-                    onChange={(e) => handleFieldUpdate({ due_date: e.target.value })}
-                    className="w-48 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    onChange={(e) => handleFieldUpdate({ due_date: e.target.value || null })} // Handle empty date
+                    className="w-48 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-1" // Adjusted padding
                   />
                 </div>
 
@@ -187,7 +246,7 @@ export const TaskDetails: React.FC<TaskDetailsProps> = ({
                     <span className="text-sm text-gray-500">Project</span>
                   </div>
                   <div className="text-sm text-gray-900">
-                    {currentProject?.name} • {currentColumn?.name}
+                    {currentProject?.name ?? 'Unknown Project'} • {currentColumn?.name ?? 'Unknown Column'}
                   </div>
                 </div>
 
@@ -200,7 +259,7 @@ export const TaskDetails: React.FC<TaskDetailsProps> = ({
                   <select
                     value={task.priority || 'medium'}
                     onChange={(e) => handleFieldUpdate({ priority: e.target.value })}
-                    className="w-48 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    className="w-48 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-1" // Adjusted padding
                   >
                     <option value="low">Low</option>
                     <option value="medium">Medium</option>
@@ -210,30 +269,32 @@ export const TaskDetails: React.FC<TaskDetailsProps> = ({
                 </div>
 
                 {/* Custom Fields */}
-                <div className="space-y-2">
-                  <h3 className="text-sm font-medium text-gray-900">Custom Fields</h3>
+                <div className="space-y-3"> {/* Increased spacing */}
+                  <h3 className="text-sm font-medium text-gray-900 mb-1">Custom Fields</h3>
                   {task.customFields && task.customFields.length > 0 ? (
                     task.customFields.map((field) => (
-                      <div key={field.field_id} className="flex items-center space-x-2">
-                        <span className="w-32 text-sm text-gray-700">
-                          {field.custom_fields.name}
+                      <div key={field.field_id} className="flex items-center space-x-4"> {/* Use space-x-4 like others */}
+                        <span className="w-32 text-sm text-gray-700 flex-shrink-0"> {/* Added flex-shrink-0 */}
+                          {field.custom_fields?.name ?? 'Unnamed Field'}
                         </span>
-                        {field.custom_fields.type === 'select' ? (
+                        {field.custom_fields?.type === 'select' ? (
                           <select
                             value={field.value || ''}
-                            onChange={(e) => {
+                             onChange={(e) => {
                               const newValue = e.target.value;
-                              setTask({
-                                ...task,
-                                customFields: task.customFields.map((f) =>
+                              // Optimistically update UI - consider debouncing or throttling updates
+                              setTask(prevTask => prevTask ? ({
+                                ...prevTask,
+                                customFields: prevTask.customFields.map((f) =>
                                   f.field_id === field.field_id ? { ...f, value: newValue } : f
                                 ),
-                              });
+                              }) : null);
+                              // Persist the change on blur
                             }}
                             onBlur={(e) => handleCustomFieldChange(field.field_id, e.target.value)}
-                            className="w-48 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                            className="w-48 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-1" // Adjusted padding
                           >
-                            <option value="">Select an option</option>
+                            <option value="">Select...</option> {/* Improved placeholder */}
                             {parseOptions(field.custom_fields.options).map((option: string) => (
                               <option key={option} value={option}>
                                 {option}
@@ -242,45 +303,83 @@ export const TaskDetails: React.FC<TaskDetailsProps> = ({
                           </select>
                         ) : (
                           <input
-                            type={field.custom_fields.type === 'number' ? 'number' : 'text'}
+                            type={field.custom_fields?.type === 'number' ? 'number' : 'text'}
                             value={field.value || ''}
                             onChange={(e) => {
                               const newValue = e.target.value;
-                              setTask({
-                                ...task,
-                                customFields: task.customFields.map((f) =>
+                               // Optimistically update UI - consider debouncing or throttling updates
+                               setTask(prevTask => prevTask ? ({
+                                ...prevTask,
+                                customFields: prevTask.customFields.map((f) =>
                                   f.field_id === field.field_id ? { ...f, value: newValue } : f
                                 ),
-                              });
+                              }) : null);
                             }}
                             onBlur={(e) => handleCustomFieldChange(field.field_id, e.target.value)}
-                            className="w-48 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                            className="w-48 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-1" // Adjusted padding
                           />
                         )}
                       </div>
                     ))
                   ) : (
-                    <p className="text-sm text-gray-500">No custom fields available.</p>
+                    <p className="text-sm text-gray-500 pl-36">No custom fields available.</p> /* Indent message */
                   )}
                 </div>
 
                 {/* Description */}
                 <div className="space-y-2">
-                  <label
-                    htmlFor="description"
-                    className="block text-sm font-medium text-gray-700"
-                  >
-                    Description
-                  </label>
-                  <textarea
-                    id="description"
-                    value={task.description || ''}
-                    onChange={(e) => handleFieldUpdate({ description: e.target.value })}
-                    rows={4}
-                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2"
-                    placeholder="Add a description..."
-                  />
+                  <div className="flex justify-between items-center">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Description
+                    </label>
+                    {!isEditingDescription && (
+                      <button
+                        onClick={() => setIsEditingDescription(true)}
+                        className="text-sm text-indigo-600 hover:text-indigo-800 flex items-center"
+                      >
+                         <Edit2 className="h-4 w-4 mr-1" /> Edit
+                      </button>
+                    )}
+                  </div>
+
+                  {isEditingDescription ? (
+                    <div>
+                      <textarea
+                        id="description"
+                        value={editedDescription}
+                        onChange={(e) => setEditedDescription(e.target.value)}
+                        rows={6} // Increased rows for better editing
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2"
+                        placeholder="Add a description..."
+                      />
+                      <div className="flex justify-end space-x-2 mt-2">
+                         <button
+                           onClick={handleCancelDescriptionEdit}
+                           className="px-3 py-1 text-sm rounded-md border border-gray-300 hover:bg-gray-50"
+                         >
+                           Cancel
+                         </button>
+                         <button
+                           onClick={handleSaveDescription}
+                           className="px-3 py-1 text-sm rounded-md border border-transparent text-white bg-indigo-600 hover:bg-indigo-700"
+                         >
+                           Save
+                         </button>
+                       </div>
+                    </div>
+                  ) : (
+                    <div className="prose prose-sm max-w-none p-2 border border-transparent rounded-md min-h-[6rem]"> {/* Added min-height */}
+                       {task.description ? (
+                           <ReactLinkify componentDecorator={linkDecorator}>
+                               <div className="whitespace-pre-wrap">{task.description}</div>
+                           </ReactLinkify>
+                       ) : (
+                           <p className="text-gray-500 italic">No description provided.</p>
+                       )}
+                    </div>
+                  )}
                 </div>
+
 
                 {/* Subtasks */}
                 <div className="space-y-2">
